@@ -1,0 +1,25 @@
+syntax = "proto3";
+package sub_shard;
+option go_package = "/github.com/LilithGames/moxa/sub_shard";
+
+import "proto/dragonboat/dragonboat.proto";
+
+message GetRequest {
+
+}
+message GetResponse {
+  uint64 value = 1;
+}
+message IncrRequest {
+
+}
+message IncrResponse {
+  uint64 value = 1;
+}
+
+service SubShard {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Incr(IncrRequest) returns (IncrResponse) {
+    option (dragonboat.options) = { type: "mutation" };
+  };
+}

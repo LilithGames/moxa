@@ -1,0 +1,82 @@
+syntax = "proto3";
+package master_shard;
+option go_package = "github.com/LilithGames/moxa/master_shard";
+
+import "proto/dragonboat/dragonboat.proto";
+import "master_shard/state.proto";
+
+enum ErrCode {
+  OK = 0;
+
+  NotFound = 404;
+  AlreadyExists = 421;
+}
+
+// Request and response
+message HealthzRequest {}
+message HealthzResponse {}
+
+message ListShardsRequest {
+  optional string node_host_id = 1;
+}
+message ListShardsResponse {
+  repeated ShardSpec shards = 1;
+  uint64 state_version = 2;
+}
+
+message GetStateVersionRequest {}
+message GetStateVersionResponse {
+  uint64 shards_state_version = 1;
+}
+
+message NodeCreateView {
+  string node_host_id = 1;
+  string addr = 2;
+}
+message CreateShardRequest {
+  string name = 1;
+  repeated NodeCreateView nodes = 2;
+  optional int32 replica = 3;
+}
+message CreateShardResponse {
+  ShardSpec shard = 1;
+}
+
+message UpdateShardRequest {
+  string name = 1;
+  repeated NodeCreateView nodes = 2;
+  optional int32 replica = 3;
+}
+message UpdateShardResponse {
+  int32 updated = 1;
+}
+
+message DeleteShardRequest {
+  string name = 1;
+}
+message DeleteShardResponse {
+  int32 updated = 1;
+}
+message GetShardRequest {
+  string name = 1;
+}
+message GetShardResponse {
+  ShardSpec shard = 1;
+}
+
+service MasterShard {
+  rpc Healthz(HealthzRequest) returns (HealthzResponse);
+  rpc GetStateVersion(GetStateVersionRequest) returns (GetStateVersionResponse);
+
+  rpc ListShards(ListShardsRequest) returns (ListShardsResponse);
+  rpc GetShard(GetShardRequest) returns (GetShardResponse);
+  rpc CreateShard(CreateShardRequest) returns (CreateShardResponse) {
+    option (dragonboat.options) = { type: "mutation" };
+  };
+  rpc UpdateShard(UpdateShardRequest) returns (UpdateShardResponse) {
+    option (dragonboat.options) = { type: "mutation" };
+  }
+  rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse) {
+    option (dragonboat.options) = { type: "mutation" };
+  };
+}

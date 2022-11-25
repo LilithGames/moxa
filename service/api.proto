@@ -1,0 +1,202 @@
+syntax = "proto3";
+package service;
+option go_package = "github.com/LilithGames/moxa/service";
+
+import "google/api/annotations.proto";
+
+message StringMessage {
+  int32 id = 1;
+  optional int32 value = 2;
+}
+
+message NodeHostInfo {
+  string node_host_id = 1;
+  string raft_address = 2;
+  repeated ShardInfo shard_info_list = 3;
+}
+
+message NodeInfo {
+  uint64 node_id = 1;
+  int32  node_index = 2;
+  string node_host_id = 3;
+  string host_name = 4;
+  string addr = 5;
+  bool   following = 6;
+  bool   leading = 7;
+  string  version = 8;
+}
+
+message HealthzRequest {}
+message HealthzResponse {}
+message ShardHealthzRequest{
+    uint64 shard_id = 1;
+}
+message ShardHealthzResponse{}
+message NodeHostInfoRequest {}
+message NodeHostInfoResponse {
+  NodeHostInfo node_host_info = 1;
+}
+message ShardNopRequest{
+    uint64 shard_id = 1;
+}
+message ShardNopResponse{}
+
+message NodeView {
+  string node_host_id = 1;
+  uint64 node_id = 2;
+  string addr = 3;
+}
+message ShardSpec {
+  string shard_name = 1;
+  uint64 shard_id = 2;
+  repeated NodeView nodes = 3;
+}
+
+message ShardInfo {
+  uint64 shard_id = 1;
+  uint64 node_id = 2;
+  map<uint64, string> nodes = 3;
+  string state_machine_type = 4;
+  bool is_leader = 5;
+  bool is_observer = 6;
+  bool is_witness = 7;
+  bool pending = 8;
+}
+message ShardAddNodeRequest{
+  uint64 shard_id = 1;
+  int32 node_index = 2;
+  optional uint64 node_id = 3;
+}
+message ShardAddNodeResponse{}
+message ShardRemoveNodeRequest{
+  uint64 shard_id = 1;
+  int32 node_index = 2;
+}
+message ShardRemoveNodeResponse{
+  int32 updated = 1;
+}
+message ShardTransferLeaderRequest{
+  uint64 shard_id = 1;
+  int32 node_index = 2;
+}
+message ShardTransferLeaderResponse{}
+message ShardListNodeRequest{
+  uint64 shard_id = 1;
+}
+message ShardListNodeResponse{
+  repeated NodeInfo nodes = 1;
+}
+message RemoteSnapshot {
+  uint64 index = 1;
+  string version = 2;
+  string path = 3;
+  string node_host_id = 4;
+  map<uint64, string> nodes = 5;
+}
+message CreateSnapshotRequest{
+  uint64 shard_id = 1;
+  bool export = 2;
+  bool force = 3;
+  bool leader = 4;
+  optional uint64 compaction_overhead = 5;
+}
+message CreateSnapshotResponse{
+  uint64 snapshot_index = 2;
+  string version = 3;
+  optional RemoteSnapshot snapshot = 4;
+}
+
+service NodeHost {
+  rpc Info(NodeHostInfoRequest) returns (NodeHostInfoResponse) {
+    option (google.api.http) = {
+      get: "/nodehost/info"
+    };
+  }
+  rpc Healthz(HealthzRequest) returns (HealthzResponse) {
+    option (google.api.http) = {
+      get: "/healthz"
+    };
+  }
+  rpc ShardHealthz(ShardHealthzRequest) returns (ShardHealthzResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/healthz"
+    };
+  }
+  rpc ShardNop(ShardNopRequest) returns (ShardNopResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/nop"
+    };
+  }
+  rpc AddNode(ShardAddNodeRequest) returns (ShardAddNodeResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/node/{node_index}/add"
+    };
+  }
+  rpc RemoveNode(ShardRemoveNodeRequest) returns (ShardRemoveNodeResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/node/{node_index}/remove"
+    };
+  }
+  rpc ListNode(ShardListNodeRequest) returns (ShardListNodeResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/node/list"
+    };
+  }
+  rpc TransferLeader(ShardTransferLeaderRequest) returns (ShardTransferLeaderResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/node/{node_index}/lead"
+    };
+  }
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/snapshot/create"
+    };
+  }
+}
+
+message AddShardSpecRequest {
+  string shard_name = 1;
+}
+message AddShardSpecResponse {
+  ShardSpec shard = 1;
+}
+message RemoveShardSpecRequest {
+  string shard_name = 1;
+}
+message RemoveShardSpecResponse {
+  int32 updated = 1;
+}
+message RebalanceShardSpecRequest {
+  string shard_name = 1;
+}
+message RebalanceShardSpecResponse {
+  int32 updated = 1;
+}
+message ListShardSpecRequest {}
+message ListShardSpecResponse {
+  repeated ShardSpec shards = 1;
+  uint64 version = 2;
+}
+
+service Spec {
+  rpc AddShardSpec(AddShardSpecRequest) returns (AddShardSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/shard/{shard_name}/add"
+    };
+  }
+  rpc RemoveShardSpec(RemoveShardSpecRequest) returns (RemoveShardSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/shard/{shard_name}/remove"
+    };
+  }
+  rpc RebalanceShardSpec(RebalanceShardSpecRequest) returns (RebalanceShardSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/shard/{shard_name}/rebalance"
+    };
+  }
+  rpc ListShardSpec(ListShardSpecRequest) returns (ListShardSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/shard/list"
+    };
+  }
+}

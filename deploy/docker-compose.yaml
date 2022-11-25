@@ -1,0 +1,8 @@
+version: '2.1'
+
+services:
+  moxa:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ${REGISTRY}/avatar/hulucc/moxa:latest

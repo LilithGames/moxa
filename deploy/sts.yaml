@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: moxa
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: moxa
+  serviceName: moxa-headless
+  replicas: 3
+  revisionHistoryLimit: 0
+  podManagementPolicy: Parallel
+  template:
+    metadata:
+      labels:
+        app: moxa
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: moxa
+          image: ${REGISTRY}/avatar/hulucc/moxa:latest
+          imagePullPolicy: Always
+          command:
+            - bash
+            - -c
+            - |
+              # tail -f /dev/null
+              ./moxa
+          env: 
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_SERVICENAME
+              value: moxa-headless
+            - name: POD_SHAREDIR
+              value: "/share"
+            - name: RECOVER_MODE
+              value: "true"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: share
+              mountPath: /share
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 3
+            timeoutSeconds: 2
+            periodSeconds: 1
+            successThreshold: 2
+            failureThreshold: 2
+      volumes:
+        - name: share
+          persistentVolumeClaim:
+            claimName: share-moxa
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        storageClassName: alicloud-disk-efficiency
+        accessModes: 
+          - ReadWriteOnce 
+        resources:
+          requests:
+            storage: 20Gi
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: moxa-headless
+  namespace: default
+spec:
+  selector:
+    app: moxa
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: 7946
+      targetPort: 7946
+      name: gossip
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: moxa
+  namespace: default
+spec:
+  selector:
+    app: moxa
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+    - port: 8001
+      targetPort: 8001
+      name: grpc
+
+---

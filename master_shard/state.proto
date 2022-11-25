@@ -1,0 +1,27 @@
+syntax = "proto3";
+package master_shard;
+option go_package = "github.com/LilithGames/moxa/master_shard";
+
+message Node {
+  string node_host_id = 1;
+  uint64 node_id = 2;
+  string addr = 3;
+}
+
+// StateMachine
+message ShardSpec {
+  uint64 state_version = 1;
+  string shard_name = 2;
+  uint64 shard_id = 3;
+  int32 replica = 4;
+  map<string, Node> nodes = 5;
+}
+
+message StateRoot {
+  uint64 shards_version = 1;
+  uint64 last_shard_id = 2;
+
+  // spec
+  // shardname-shard
+  map<string, ShardSpec> shards = 3;
+}

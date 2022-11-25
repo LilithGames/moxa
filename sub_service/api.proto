@@ -1,0 +1,31 @@
+syntax = "proto3";
+package sub_service;
+option go_package = "github.com/LilithGames/moxa/sub_service";
+
+import "google/api/annotations.proto";
+
+message GetRequest {
+  string shard_name = 1;
+}
+message GetResponse {
+  uint64 value = 1;
+}
+message IncrRequest {
+  string shard_name = 1;
+}
+message IncrResponse {
+  uint64 value = 1;
+}
+
+service SubService {
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (google.api.http) = {
+      get: "/sub/{shard_name}/get"
+    };
+  }
+  rpc Incr(IncrRequest) returns (IncrResponse) {
+    option (google.api.http) = {
+      get: "/sub/{shard_name}/incr"
+    };
+  }
+}

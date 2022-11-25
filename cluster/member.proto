@@ -1,0 +1,37 @@
+syntax = "proto3";
+package cluster;
+option go_package = "github.com/LilithGames/moxa/cluster";
+
+enum MemberType {
+  Dragonboat = 0;
+}
+
+message MemberMeta {
+  string host_name = 1;
+  string node_host_id = 2;
+  string raft_address = 3;
+  int32  node_host_index = 4;
+  uint64 master_node_id = 5;
+  int64  startup_timestamp = 6;
+  string code_hash = 7;
+  MemberType type = 8;
+}
+
+message MemberShard {
+  uint64 shard_id = 1;
+  uint64 node_id = 2;
+  map<uint64, string> nodes = 3;
+  bool is_leader = 5;
+  bool is_observer = 6;
+  bool is_witness = 7;
+  bool pending = 8;
+}
+
+message MemberState {
+  string node_host_id = 1;
+  map<uint64,MemberShard> shards = 2;
+}
+
+message MemberGlobalState {
+  map<string, MemberState> members = 1;
+}

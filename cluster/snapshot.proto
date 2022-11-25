@@ -1,0 +1,11 @@
+syntax = "proto3";
+package cluster;
+option go_package = "github.com/LilithGames/moxa/cluster";
+
+message RemoteSnapshot {
+  uint64 index = 1;
+  string version = 2;
+  string path = 3;
+  string node_host_id = 4;
+  map<uint64, string> nodes = 5;
+}
