@@ -19,38 +19,24 @@ clean-proto:
 	@rm -f service/*.pb*.go
 
 .PHONY: build-image
-build-image: build-linux 
-	@docker-compose -f deploy/docker-compose.yaml build moxa
-
-.PHONY: push-image
-push-image: build-image
-	@docker-compose -f deploy/docker-compose.yaml push moxa
-
-.PHONY: run-image
-run-image: build-image
-	@docker-compose -f deploy/docker-compose.yaml run moxa
-
-.PHONY: build-linux
-build-linux: proto
-	@GOOS=linux go build -o bin/ github.com/LilithGames/moxa/cmd/...
+build-image: proto
+	@ko build -B github.com/LilithGames/moxa/cmd/moxa
 
 .PHONY: build
 build: proto
 	@go build -o bin/ github.com/LilithGames/moxa/cmd/...
 
 .PHONY: run
-run: build-image
-	@docker-compose -f deploy/docker-compose.yaml run moxa ./moxa
+run:
+	@docker run -it --rm --entrypoint=bash $$(ko build -B github.com/LilithGames/moxa/cmd/moxa)
 
 .PHONY: install
 install:
-	@kubectl apply -k deploy
+	@kubectl kustomize deploy | ko resolve -B -f - | kubectl apply -f -
 
 .PHONY: clean
 clean:
 	@kubectl delete -k deploy
 
 .PHONY: deploy
-deploy: push-image install
-	@kubectl rollout restart statefulset.apps/moxa -n temp
-	@kubectl rollout status statefulset.apps/moxa -n temp
+deploy: install

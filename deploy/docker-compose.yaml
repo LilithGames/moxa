@@ -5,4 +5,4 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: ${REGISTRY}/avatar/hulucc/moxa:latest
+    image: moxa:latest

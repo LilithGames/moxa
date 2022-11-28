@@ -19,14 +19,14 @@ spec:
       terminationGracePeriodSeconds: 10
       containers:
         - name: moxa
-          image: ${REGISTRY}/avatar/hulucc/moxa:latest
+          image: ko://github.com/LilithGames/moxa/cmd/moxa
           imagePullPolicy: Always
           command:
             - bash
             - -c
             - |
               # tail -f /dev/null
-              ./moxa
+              exec /ko-app/moxa
           env: 
             - name: POD_IP
               valueFrom:
