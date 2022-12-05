@@ -1,11 +1,11 @@
 package cluster
 
 import (
-	"sync"
 	"fmt"
+	"sync"
 
-	"google.golang.org/protobuf/proto"
 	"github.com/samber/lo"
+	"google.golang.org/protobuf/proto"
 )
 
 type IMemberStateManager interface {
@@ -14,7 +14,7 @@ type IMemberStateManager interface {
 	GetMemberStateList() map[string]*MemberState
 }
 type MemberStateManager struct {
-	mu    sync.RWMutex
+	mu sync.RWMutex
 
 	nhid  string
 	state *MemberGlobalState
@@ -63,7 +63,7 @@ func (it *MemberStateManager) GetState(join bool) []byte {
 	it.mu.RLock()
 	defer it.mu.RUnlock()
 	return lo.Must1(proto.Marshal(it.state))
-	
+
 }
 func (it *MemberStateManager) MergeState(buf []byte, join bool) {
 	rstate := &MemberGlobalState{}

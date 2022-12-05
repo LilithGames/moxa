@@ -16,15 +16,14 @@ type Manager interface {
 	Members() IMembers
 	EventBus() *eventbus.EventBus
 	Client() IClient
-	Snapshot() ISnapshotManager
 	Version() IVersionManager
+	Config() *Config
+	StartupReady() *Signal
 
 	MinClusterSize() int32
 	NodeHostIndex() int32
 	MasterNodeID() uint64
 	ServiceName() string
-	SnapshotBaseDir() string
-	RecoverMode() bool
 
 	ImportSnapshots(ctx context.Context, snapshots map[uint64]*RemoteSnapshot) error
 	Stop() error

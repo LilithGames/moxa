@@ -18,7 +18,12 @@ func (it *eventListener) LeaderUpdated(info raftio.LeaderInfo) {
 	})
 }
 func (it *eventListener) NodeHostShuttingDown()             {}
-func (it *eventListener) NodeUnloaded(info raftio.NodeInfo) {}
+func (it *eventListener) NodeUnloaded(info raftio.NodeInfo) {
+	it.bus.PublishAsync(EventTopic_NodeHostNodeUnloaded.String(), &NodeHostNodeUnloadedEvent{
+		ShardId: info.ClusterID,
+		NodeId:  info.NodeID,
+	})
+}
 func (it *eventListener) NodeReady(info raftio.NodeInfo) {
 	it.bus.PublishAsync(EventTopic_NodeHostNodeReady.String(), &NodeHostNodeReadyEvent{
 		ShardId: info.ClusterID,

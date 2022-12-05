@@ -11,6 +11,7 @@ import (
 	"github.com/lni/goutils/syncutil"
 
 	"github.com/LilithGames/moxa/master_shard"
+	"github.com/LilithGames/moxa/utils"
 )
 
 func OnOnceMasterShardReady(stopper *syncutil.Stopper, cm Manager) chan struct{} {
@@ -24,7 +25,7 @@ func OnOnceMasterShardReady(stopper *syncutil.Stopper, cm Manager) chan struct{}
 				close(ch)
 				return
 			}
-			ResetTimer(timer, duration)
+			utils.ResetTimer(timer, duration)
 			select {
 			case <-timer.C:
 			case <-stopper.ShouldStop():
@@ -44,24 +45,27 @@ func UpdateNodeHostInfoWorker(cm Manager) Worker {
 			defer sub2.Close()
 			leaderUpdated, sub3 := cm.EventBus().Subscribe(EventTopic_NodeHostLeaderUpdated.String())
 			defer sub3.Close()
+			nodeUnloaded, sub4 := cm.EventBus().Subscribe(EventTopic_NodeHostNodeUnloaded.String())
+			defer sub4.Close()
 
 			duration := time.Second * 30
 			timer := time.NewTimer(duration)
 			defer timer.Stop()
 			for {
-				nhi := cm.NodeHost().GetNodeHostInfo(dragonboat.NodeHostInfoOption{true})
+				nhi := cm.NodeHost().GetNodeHostInfo(dragonboat.NodeHostInfoOption{false})
 				if err := cm.Members().UpdateNodeHostInfo(nhi); err != nil {
-					log.Println("[WARN]", fmt.Errorf("Members().UpdateNodeHostInfo err: %w", err))
+					log.Println("[WARN]", fmt.Errorf("UpdateNodeHostInfoWorker: Members().UpdateNodeHostInfo err: %w", err))
 				}
 				if err := cm.Members().SyncState(); err != nil {
-					log.Println("[WARN]", fmt.Errorf("Members().SyncState err: %w", err))
+					log.Println("[WARN]", fmt.Errorf("UpdateNodeHostInfoWorker: Members().SyncState err: %w", err))
 					continue
 				}
-				ResetTimer(timer, duration)
+				utils.ResetTimer(timer, duration)
 				select {
 				case <-memberChanged:
 				case <-nodeReady:
 				case <-leaderUpdated:
+				case <-nodeUnloaded:
 				case <-timer.C:
 				case <-stopper.ShouldStop():
 					return

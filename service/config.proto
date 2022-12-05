@@ -1,0 +1,9 @@
+syntax = "proto3";
+package service;
+option go_package = "github.com/LilithGames/moxa/service";
+
+
+message Config {
+  int32 http_port = 1;
+  int32 grpc_port = 2;
+}

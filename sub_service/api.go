@@ -1,14 +1,17 @@
 package sub_service
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 
 	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
+	gruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/LilithGames/moxa/cluster"
-	"github.com/LilithGames/moxa/service"
 	"github.com/LilithGames/moxa/master_shard"
+	"github.com/LilithGames/moxa/service"
 	"github.com/LilithGames/moxa/sub_shard"
 )
 
@@ -22,7 +25,11 @@ func RegisterApiService(cs *service.ClusterService) {
 		cm: cs.ClusterManager(),
 	}
 	RegisterSubServiceServer(cs.GrpcServiceRegistrar(), svc)
-	cs.AddGrpcGatewayRegister(RegisterSubServiceHandlerFromEndpoint)
+	cs.AddGrpcGatewayRegister(func(ctx context.Context, mux *gruntime.ServeMux) error {
+		opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+		return RegisterSubServiceHandlerFromEndpoint(ctx, mux, fmt.Sprintf("localhost:%d", cs.Config().GrpcPort), opts)
+	})
+
 }
 
 func (it *ApiService) client(shardID uint64) sub_shard.ISubShardDragonboatClient {

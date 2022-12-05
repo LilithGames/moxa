@@ -13,15 +13,16 @@ import (
 	"github.com/lni/goutils/syncutil"
 	"github.com/samber/lo"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/LilithGames/moxa/cluster"
+	"github.com/LilithGames/moxa/utils"
 )
 
-type GrpcGatewayRegisterFunc func(ctx context.Context, mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error
+type GrpcGatewayRegisterFunc func(ctx context.Context, mux *runtime.ServeMux) error
 
 type ClusterService struct {
+	config    *Config
 	cm        cluster.Manager
 	server    *http.Server
 	gs        *grpc.Server
@@ -29,10 +30,11 @@ type ClusterService struct {
 	registers []GrpcGatewayRegisterFunc
 }
 
-func NewClusterService(cm cluster.Manager) (*ClusterService, error) {
+func NewClusterService(cm cluster.Manager, config *Config) (*ClusterService, error) {
 	it := &ClusterService{
+		config:    config,
 		cm:        cm,
-		server:    &http.Server{Addr: ":8000"},
+		server:    &http.Server{Addr: fmt.Sprintf(":%d", config.HttpPort)},
 		gs:        grpc.NewServer(grpc.UnaryInterceptor(NewRequestTimeout(time.Second * 60))),
 		stopper:   syncutil.NewStopper(),
 		registers: []GrpcGatewayRegisterFunc{},
@@ -52,9 +54,11 @@ func (it *ClusterService) ClusterManager() cluster.Manager {
 	return it.cm
 }
 
+func (it *ClusterService) Config() *Config {
+	return it.config
+}
+
 func (it *ClusterService) Run() error {
-	grpcPort := 8001
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 		MarshalOptions:   protojson.MarshalOptions{Indent: "  ", Multiline: true, EmitUnpopulated: true},
 		UnmarshalOptions: protojson.UnmarshalOptions{DiscardUnknown: true},
@@ -63,7 +67,7 @@ func (it *ClusterService) Run() error {
 
 	ech := make(chan error, 10)
 	it.stopper.RunWorker(func() {
-		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", grpcPort))
+		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", it.config.GrpcPort))
 		if err != nil {
 			ech <- fmt.Errorf("net.Listen err: %w", err)
 			it.stopper.Close()
@@ -76,10 +80,10 @@ func (it *ClusterService) Run() error {
 		}
 		log.Println("[INFO]", fmt.Sprintf("grpc.Serve stopped"))
 	})
-	ctx := cluster.BindContext(it.stopper, context.Background())
+	ctx := utils.BindContext(it.stopper, context.Background())
 	it.stopper.RunWorker(func() {
 		for _, register := range it.registers {
-			if err := register(ctx, mux, fmt.Sprintf("localhost:%d", grpcPort), opts); err != nil {
+			if err := register(ctx, mux); err != nil {
 				ech <- fmt.Errorf("GrpcGatewayRegister %v err: %w", register, err)
 				it.stopper.Close()
 				return

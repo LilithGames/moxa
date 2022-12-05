@@ -1,19 +1,23 @@
 package service
 
 import (
+	"context"
 	"log"
 	"math/rand"
 	"sync"
-	"fmt"
-	"context"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/base"
+	"google.golang.org/grpc/codes"
 )
+
+var RouteNotFound codes.Code = 10000404
 
 const DragonboatBalancerRouteShard = "DragonboatBalancerRouteShard"
 const DragonboatBalancerRouteShardLeader = "DragonboatBalancerRouteShardLeader"
 const DragonboatBalancerRouteNodeHost = "DragonboatBalancerRouteNodeHost"
+
 func WithRouteShard(ctx context.Context, shardID uint64) context.Context {
 	return context.WithValue(ctx, DragonboatBalancerRouteShard, shardID)
 }
@@ -24,7 +28,6 @@ func WithRouteNodeHost(ctx context.Context, nodeHostID string) context.Context {
 	return context.WithValue(ctx, DragonboatBalancerRouteNodeHost, nodeHostID)
 }
 
-
 func init() {
 	balancer.Register(NewDragonboatRoundRobinBalancerBuilder())
 }
@@ -34,7 +37,7 @@ func NewDragonboatRoundRobinBalancerBuilder() balancer.Builder {
 	return base.NewBalancerBuilder("DragonboatRoundRobinBalancer", builder, base.Config{HealthCheck: true})
 }
 
-type dragonboatRoundRobinBalancerBuilder struct { }
+type dragonboatRoundRobinBalancerBuilder struct{}
 
 func (it *dragonboatRoundRobinBalancerBuilder) Build(buildInfo base.PickerBuildInfo) balancer.Picker {
 	if len(buildInfo.ReadySCs) == 0 {
@@ -44,12 +47,14 @@ func (it *dragonboatRoundRobinBalancerBuilder) Build(buildInfo base.PickerBuildI
 	shards := make(map[uint64]*base.PickerBuildInfo, 0)
 	leaders := make(map[uint64]*base.PickerBuildInfo, 0)
 	nodeHosts := make(map[string]*base.PickerBuildInfo, 0)
+	// log.Println("[INFO]", fmt.Sprintf("balancer start"))
 	for conn, info := range buildInfo.ReadySCs {
 		meta, ok := info.Address.Attributes.Value("meta").(*ResolverMeta)
 		if !ok {
 			log.Println("[WARN] dragonboatRoundRobinBalancerBuilder missing meta in Attributes, pls use with dragonboat resolver")
 			continue
 		}
+		// log.Println("[INFO]", fmt.Sprintf("balancer: %s %v", info.Address.Addr, meta.ShardIDs))
 		nodeHosts[info.Address.ServerName] = &base.PickerBuildInfo{ReadySCs: map[balancer.SubConn]base.SubConnInfo{conn: info}}
 		for shardID, isLeader := range meta.ShardIDs {
 			if pbi, ok := shards[shardID]; ok {
@@ -62,6 +67,7 @@ func (it *dragonboatRoundRobinBalancerBuilder) Build(buildInfo base.PickerBuildI
 			}
 		}
 	}
+	// log.Println("[INFO]", fmt.Sprintf("balancer end"))
 
 	rrBuilder := &rrPickerBuilder{}
 	sBuilder := &sPickerBuilder{}
@@ -80,19 +86,19 @@ func (it *dragonboatRoundRobinBalancerBuilder) Build(buildInfo base.PickerBuildI
 	fallback := rrBuilder.Build(buildInfo)
 
 	picker := &dragonboatRoundRobinBalancerPicker{
-		shardPickers: shardPickers,
-		leaderPickers: leaderPickers,
+		shardPickers:     shardPickers,
+		leaderPickers:    leaderPickers,
 		nodeHostsPickers: nodeHostsPickers,
-		fallback: fallback,
+		fallback:         fallback,
 	}
 	return picker
 }
 
 type dragonboatRoundRobinBalancerPicker struct {
-	shardPickers map[uint64]balancer.Picker
-	leaderPickers map[uint64]balancer.Picker
+	shardPickers     map[uint64]balancer.Picker
+	leaderPickers    map[uint64]balancer.Picker
 	nodeHostsPickers map[string]balancer.Picker
-	fallback balancer.Picker
+	fallback         balancer.Picker
 }
 
 func (it *dragonboatRoundRobinBalancerPicker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
@@ -100,19 +106,19 @@ func (it *dragonboatRoundRobinBalancerPicker) Pick(info balancer.PickInfo) (bala
 		if picker, ok := it.nodeHostsPickers[nhid]; ok {
 			return picker.Pick(info)
 		} else {
-			return base.NewErrPicker(fmt.Errorf("balancer nodehost %s not found", nhid)).Pick(info)
+			return balancer.PickResult{}, grpc.Errorf(RouteNotFound, "balancer nodehost %s not found", nhid)
 		}
 	} else if shardID, ok := info.Ctx.Value(DragonboatBalancerRouteShardLeader).(uint64); ok {
 		if picker, ok := it.leaderPickers[shardID]; ok {
 			return picker.Pick(info)
 		} else {
-			return base.NewErrPicker(fmt.Errorf("balancer shard leader %d not found", shardID)).Pick(info)
+			return balancer.PickResult{}, grpc.Errorf(RouteNotFound, "balancer shard leader %d not found", shardID)
 		}
 	} else if shardID, ok := info.Ctx.Value(DragonboatBalancerRouteShard).(uint64); ok {
 		if picker, ok := it.shardPickers[shardID]; ok {
 			return picker.Pick(info)
 		} else {
-			return base.NewErrPicker(fmt.Errorf("balancer shard %d not found", shardID)).Pick(info)
+			return balancer.PickResult{}, grpc.Errorf(RouteNotFound, "balancer shard %d not found", shardID)
 		}
 	} else {
 		return it.fallback.Pick(info)
@@ -156,7 +162,7 @@ func (p *rrPicker) Pick(balancer.PickInfo) (balancer.PickResult, error) {
 	return balancer.PickResult{SubConn: sc}, nil
 }
 
-type sPickerBuilder struct {}
+type sPickerBuilder struct{}
 
 func (*sPickerBuilder) Build(info base.PickerBuildInfo) balancer.Picker {
 	for sc := range info.ReadySCs {

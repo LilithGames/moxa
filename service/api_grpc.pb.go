@@ -396,6 +396,15 @@ type SpecClient interface {
 	RemoveShardSpec(ctx context.Context, in *RemoveShardSpecRequest, opts ...grpc.CallOption) (*RemoveShardSpecResponse, error)
 	RebalanceShardSpec(ctx context.Context, in *RebalanceShardSpecRequest, opts ...grpc.CallOption) (*RebalanceShardSpecResponse, error)
 	ListShardSpec(ctx context.Context, in *ListShardSpecRequest, opts ...grpc.CallOption) (*ListShardSpecResponse, error)
+	GetShardSpec(ctx context.Context, in *GetShardSpecRequest, opts ...grpc.CallOption) (*GetShardSpecResponse, error)
+	CreateMigration(ctx context.Context, in *CreateMigrationRequest, opts ...grpc.CallOption) (*CreateMigrationResponse, error)
+	GetMigration(ctx context.Context, in *QueryMigrationRequest, opts ...grpc.CallOption) (*QueryMigrationResponse, error)
+	ListMigration(ctx context.Context, in *ListMigrationRequest, opts ...grpc.CallOption) (*ListMigrationResponse, error)
+	UpdateNodeSpec(ctx context.Context, in *UpdateNodeSpecRequest, opts ...grpc.CallOption) (*UpdateNodeSpecResponse, error)
+	GetNodeSpec(ctx context.Context, in *GetNodeSpecRequest, opts ...grpc.CallOption) (*GetNodeSpecResponse, error)
+	CordonNodeSpec(ctx context.Context, in *CordonNodeSpecRequest, opts ...grpc.CallOption) (*CordonNodeSpecResponse, error)
+	UncordonNodeSpec(ctx context.Context, in *UncordonNodeSpecRequest, opts ...grpc.CallOption) (*UncordonNodeSpecResponse, error)
+	DrainNodeSpec(ctx context.Context, in *DrainNodeSpecRequest, opts ...grpc.CallOption) (*DrainNodeSpecResponse, error)
 }
 
 type specClient struct {
@@ -442,6 +451,87 @@ func (c *specClient) ListShardSpec(ctx context.Context, in *ListShardSpecRequest
 	return out, nil
 }
 
+func (c *specClient) GetShardSpec(ctx context.Context, in *GetShardSpecRequest, opts ...grpc.CallOption) (*GetShardSpecResponse, error) {
+	out := new(GetShardSpecResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/GetShardSpec", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *specClient) CreateMigration(ctx context.Context, in *CreateMigrationRequest, opts ...grpc.CallOption) (*CreateMigrationResponse, error) {
+	out := new(CreateMigrationResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/CreateMigration", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *specClient) GetMigration(ctx context.Context, in *QueryMigrationRequest, opts ...grpc.CallOption) (*QueryMigrationResponse, error) {
+	out := new(QueryMigrationResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/GetMigration", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *specClient) ListMigration(ctx context.Context, in *ListMigrationRequest, opts ...grpc.CallOption) (*ListMigrationResponse, error) {
+	out := new(ListMigrationResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/ListMigration", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *specClient) UpdateNodeSpec(ctx context.Context, in *UpdateNodeSpecRequest, opts ...grpc.CallOption) (*UpdateNodeSpecResponse, error) {
+	out := new(UpdateNodeSpecResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/UpdateNodeSpec", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *specClient) GetNodeSpec(ctx context.Context, in *GetNodeSpecRequest, opts ...grpc.CallOption) (*GetNodeSpecResponse, error) {
+	out := new(GetNodeSpecResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/GetNodeSpec", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *specClient) CordonNodeSpec(ctx context.Context, in *CordonNodeSpecRequest, opts ...grpc.CallOption) (*CordonNodeSpecResponse, error) {
+	out := new(CordonNodeSpecResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/CordonNodeSpec", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *specClient) UncordonNodeSpec(ctx context.Context, in *UncordonNodeSpecRequest, opts ...grpc.CallOption) (*UncordonNodeSpecResponse, error) {
+	out := new(UncordonNodeSpecResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/UncordonNodeSpec", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *specClient) DrainNodeSpec(ctx context.Context, in *DrainNodeSpecRequest, opts ...grpc.CallOption) (*DrainNodeSpecResponse, error) {
+	out := new(DrainNodeSpecResponse)
+	err := c.cc.Invoke(ctx, "/service.Spec/DrainNodeSpec", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SpecServer is the server API for Spec service.
 // All implementations must embed UnimplementedSpecServer
 // for forward compatibility
@@ -450,6 +540,15 @@ type SpecServer interface {
 	RemoveShardSpec(context.Context, *RemoveShardSpecRequest) (*RemoveShardSpecResponse, error)
 	RebalanceShardSpec(context.Context, *RebalanceShardSpecRequest) (*RebalanceShardSpecResponse, error)
 	ListShardSpec(context.Context, *ListShardSpecRequest) (*ListShardSpecResponse, error)
+	GetShardSpec(context.Context, *GetShardSpecRequest) (*GetShardSpecResponse, error)
+	CreateMigration(context.Context, *CreateMigrationRequest) (*CreateMigrationResponse, error)
+	GetMigration(context.Context, *QueryMigrationRequest) (*QueryMigrationResponse, error)
+	ListMigration(context.Context, *ListMigrationRequest) (*ListMigrationResponse, error)
+	UpdateNodeSpec(context.Context, *UpdateNodeSpecRequest) (*UpdateNodeSpecResponse, error)
+	GetNodeSpec(context.Context, *GetNodeSpecRequest) (*GetNodeSpecResponse, error)
+	CordonNodeSpec(context.Context, *CordonNodeSpecRequest) (*CordonNodeSpecResponse, error)
+	UncordonNodeSpec(context.Context, *UncordonNodeSpecRequest) (*UncordonNodeSpecResponse, error)
+	DrainNodeSpec(context.Context, *DrainNodeSpecRequest) (*DrainNodeSpecResponse, error)
 	mustEmbedUnimplementedSpecServer()
 }
 
@@ -468,6 +567,33 @@ func (UnimplementedSpecServer) RebalanceShardSpec(context.Context, *RebalanceSha
 }
 func (UnimplementedSpecServer) ListShardSpec(context.Context, *ListShardSpecRequest) (*ListShardSpecResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListShardSpec not implemented")
+}
+func (UnimplementedSpecServer) GetShardSpec(context.Context, *GetShardSpecRequest) (*GetShardSpecResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetShardSpec not implemented")
+}
+func (UnimplementedSpecServer) CreateMigration(context.Context, *CreateMigrationRequest) (*CreateMigrationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateMigration not implemented")
+}
+func (UnimplementedSpecServer) GetMigration(context.Context, *QueryMigrationRequest) (*QueryMigrationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMigration not implemented")
+}
+func (UnimplementedSpecServer) ListMigration(context.Context, *ListMigrationRequest) (*ListMigrationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMigration not implemented")
+}
+func (UnimplementedSpecServer) UpdateNodeSpec(context.Context, *UpdateNodeSpecRequest) (*UpdateNodeSpecResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateNodeSpec not implemented")
+}
+func (UnimplementedSpecServer) GetNodeSpec(context.Context, *GetNodeSpecRequest) (*GetNodeSpecResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeSpec not implemented")
+}
+func (UnimplementedSpecServer) CordonNodeSpec(context.Context, *CordonNodeSpecRequest) (*CordonNodeSpecResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CordonNodeSpec not implemented")
+}
+func (UnimplementedSpecServer) UncordonNodeSpec(context.Context, *UncordonNodeSpecRequest) (*UncordonNodeSpecResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UncordonNodeSpec not implemented")
+}
+func (UnimplementedSpecServer) DrainNodeSpec(context.Context, *DrainNodeSpecRequest) (*DrainNodeSpecResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DrainNodeSpec not implemented")
 }
 func (UnimplementedSpecServer) mustEmbedUnimplementedSpecServer() {}
 
@@ -554,6 +680,168 @@ func _Spec_ListShardSpec_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Spec_GetShardSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetShardSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).GetShardSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/GetShardSpec",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).GetShardSpec(ctx, req.(*GetShardSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Spec_CreateMigration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateMigrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).CreateMigration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/CreateMigration",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).CreateMigration(ctx, req.(*CreateMigrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Spec_GetMigration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryMigrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).GetMigration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/GetMigration",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).GetMigration(ctx, req.(*QueryMigrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Spec_ListMigration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMigrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).ListMigration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/ListMigration",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).ListMigration(ctx, req.(*ListMigrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Spec_UpdateNodeSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateNodeSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).UpdateNodeSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/UpdateNodeSpec",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).UpdateNodeSpec(ctx, req.(*UpdateNodeSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Spec_GetNodeSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).GetNodeSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/GetNodeSpec",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).GetNodeSpec(ctx, req.(*GetNodeSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Spec_CordonNodeSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CordonNodeSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).CordonNodeSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/CordonNodeSpec",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).CordonNodeSpec(ctx, req.(*CordonNodeSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Spec_UncordonNodeSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UncordonNodeSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).UncordonNodeSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/UncordonNodeSpec",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).UncordonNodeSpec(ctx, req.(*UncordonNodeSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Spec_DrainNodeSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DrainNodeSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SpecServer).DrainNodeSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.Spec/DrainNodeSpec",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SpecServer).DrainNodeSpec(ctx, req.(*DrainNodeSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Spec_ServiceDesc is the grpc.ServiceDesc for Spec service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -576,6 +864,42 @@ var Spec_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListShardSpec",
 			Handler:    _Spec_ListShardSpec_Handler,
+		},
+		{
+			MethodName: "GetShardSpec",
+			Handler:    _Spec_GetShardSpec_Handler,
+		},
+		{
+			MethodName: "CreateMigration",
+			Handler:    _Spec_CreateMigration_Handler,
+		},
+		{
+			MethodName: "GetMigration",
+			Handler:    _Spec_GetMigration_Handler,
+		},
+		{
+			MethodName: "ListMigration",
+			Handler:    _Spec_ListMigration_Handler,
+		},
+		{
+			MethodName: "UpdateNodeSpec",
+			Handler:    _Spec_UpdateNodeSpec_Handler,
+		},
+		{
+			MethodName: "GetNodeSpec",
+			Handler:    _Spec_GetNodeSpec_Handler,
+		},
+		{
+			MethodName: "CordonNodeSpec",
+			Handler:    _Spec_CordonNodeSpec_Handler,
+		},
+		{
+			MethodName: "UncordonNodeSpec",
+			Handler:    _Spec_UncordonNodeSpec_Handler,
+		},
+		{
+			MethodName: "DrainNodeSpec",
+			Handler:    _Spec_DrainNodeSpec_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

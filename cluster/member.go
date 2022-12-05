@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/memberlist"
 	"google.golang.org/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
-	// "github.com/lni/goutils/syncutil"
+	eventbus "github.com/LilithGames/go-event-bus/v4"
 )
 
 type MemberNode struct {
@@ -24,22 +24,25 @@ type IMembers interface {
 	SyncState() error
 	Foreach(func(MemberNode) bool)
 	Nums() int
+	Notify(notify *MemberNotify, opts NotifyOptions) error
 	Stop() error
 
 }
 
 type Members struct {
-	seed string
+	seed []string
 
 	meta *MemberMeta
 	ml   *memberlist.Memberlist
 	*MemberStateManager
+	bus *eventbus.EventBus
 }
 
-func NewMembers(meta MemberMeta) (IMembers, error) {
+func NewMembers(meta MemberMeta, bus *eventbus.EventBus, seed []string) (IMembers, error) {
 	it := &Members{
-		seed: "moxa-headless:7946",
+		seed: seed,
 		meta: &meta,
+		bus:  bus,
 		MemberStateManager: NewMemberStateManager(meta.NodeHostId),
 	}
 	conf := memberlist.DefaultLANConfig()
@@ -56,7 +59,7 @@ func NewMembers(meta MemberMeta) (IMembers, error) {
 }
 
 func (it *Members) SyncState() error {
-	if _, err := it.ml.Join([]string{it.seed}); err != nil {
+	if _, err := it.ml.Join(it.seed); err != nil {
 		return fmt.Errorf("memberlist.Join err %w", err)
 	}
 	return nil
@@ -64,6 +67,7 @@ func (it *Members) SyncState() error {
 
 func (it *Members) UpdateNodeHostInfo(nhi *dragonboat.NodeHostInfo) error {
 	shards := make(map[uint64]*MemberShard)
+	logShards := make(map[uint64]uint64)
 	for _, ci := range nhi.ClusterInfoList {
 		shards[ci.ClusterID] = &MemberShard {
 			ShardId: ci.ClusterID,
@@ -75,7 +79,10 @@ func (it *Members) UpdateNodeHostInfo(nhi *dragonboat.NodeHostInfo) error {
 			Pending: ci.Pending,
 		}
 	}
-	if err := it.SetMemberState(MemberState{NodeHostId: nhi.NodeHostID, Shards: shards}); err != nil {
+	for _, ni := range nhi.LogInfo {
+		logShards[ni.ClusterID] = ni.NodeID
+	}
+	if err := it.SetMemberState(MemberState{NodeHostId: nhi.NodeHostID, Shards: shards, LogShards: logShards}); err != nil {
 		return fmt.Errorf("SetMemberState err: %w", err)
 	}
 	return nil
@@ -121,5 +128,3 @@ func (it *Members) MergeRemoteState(buf []byte, join bool) {
 	it.MemberStateManager.MergeState(buf, join)
 }
 
-func (it *Members) NotifyMsg([]byte) {}
-func (it *Members) GetBroadcasts(overhead, limit int) [][]byte { return nil }

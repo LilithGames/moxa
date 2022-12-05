@@ -7,14 +7,13 @@ import (
 	"log"
 	"time"
 
-	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
 	eventbus "github.com/LilithGames/go-event-bus/v4"
+	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/goutils/syncutil"
-	"github.com/samber/lo"
-	"github.com/lni/dragonboat/v3/raftio"
 
 	"github.com/LilithGames/moxa/master_shard"
+	"github.com/LilithGames/moxa/utils"
 )
 
 func ShardSpecUpdatingWorker(cm Manager) Worker {
@@ -52,96 +51,20 @@ func ShardSpecUpdatingWorker(cm Manager) Worker {
 	}
 }
 
-func diffSubShards(addr string, spec []*master_shard.ShardSpec, status []dragonboat.ClusterInfo, persist []raftio.NodeInfo) []*ShardSpecChangingEvent {
-	specDict := lo.SliceToMap(spec, func(s *master_shard.ShardSpec) (uint64, map[uint64]string) {
-		return s.ShardId, lo.MapEntries(s.Nodes, func(nhid string, node *master_shard.Node) (uint64, string) {
-			return node.NodeId, node.Addr
-		})
-	})
-	statusDict := lo.SliceToMap(status, func(ci dragonboat.ClusterInfo) (uint64, map[uint64]string) {
-		return ci.ClusterID, ci.Nodes
-	})
-	persistDict := lo.SliceToMap(persist, func(ni raftio.NodeInfo) (uint64, uint64) {
-		return ni.ClusterID, ni.NodeID
-	})
-	specKeys := lo.MapToSlice(specDict, func(sid uint64, _ map[uint64]string) uint64 {
-		return sid
-	})
-	statusKeys := lo.MapToSlice(statusDict, func(sid uint64, _ map[uint64]string) uint64 {
-		return sid
-	})
-	persistKeys := lo.MapToSlice(persistDict, func(sid uint64, _ uint64) uint64 {
-		return sid
-	})
-	keys := lo.Union(lo.Union(specKeys, statusKeys), persistKeys)
-	results := lo.FilterMap(keys, func(sid uint64, _ int) (*ShardSpecChangingEvent, bool) {
-		if sid == MasterShardID {
-			return nil, false
-		}
-		specNode, specOK := specDict[sid]
-		statusNode, statusOK := statusDict[sid]
-		persistNodeID, persistOK := persistDict[sid]
-		specNodeID, specNodeOK := lo.FindKey(specNode, addr)
-		statusNodeID, statusNodeOK := lo.FindKey(statusNode, addr)
-		event := &ShardSpecChangingEvent{ShardId: sid, PreviousNodes: statusNode, CurrentNodes: specNode}
-		if specOK && !statusOK {
-			if !specNodeOK {
-				log.Println("[WARN] diffSubShards impossible cause: SubShardChangingType_Adding !specNodeOK")
-				return nil, false
-			}
-			event.Type = ShardSpecChangingType_Adding
-			event.CurrentNodeId = &specNodeID
-			return event, true
-		} else if !specOK && statusOK {
-			if !statusNodeOK {
-				log.Println("[WARN] diffSubShards impossible cause: SubShardChangingType_Deleting !statusNodeOK")
-				return nil, false
-			}
-			event.Type = ShardSpecChangingType_Deleting
-			event.PreviousNodeId = &statusNodeID
-			return event, true
-		} else if specOK && statusOK {
-			if specNodeOK && !statusNodeOK {
-				event.Type = ShardSpecChangingType_NodeJoining
-				event.CurrentNodeId = &specNodeID
-				return event, true
-			} else if !specNodeOK && statusNodeOK {
-				event.Type = ShardSpecChangingType_NodeLeaving
-				event.PreviousNodeId = &statusNodeID
-				return event, true
-			} else if specNodeOK && statusNodeOK {
-				if specNodeID != statusNodeID {
-					event.Type = ShardSpecChangingType_NodeMoving
-					event.CurrentNodeId = &specNodeID
-					event.PreviousNodeId = &statusNodeID
-					return event, true
-				}
-			}
-			return nil, false
-		} else if persistOK {
-			event.Type = ShardSpecChangingType_Cleanup
-			event.PreviousNodeId = &persistNodeID
-			return event, true
-		}
-		return nil, false
-	})
-	return results
-}
-
 func ShardSpecChangingWorker(cm Manager) Worker {
 	return func(stopper *syncutil.Stopper) error {
 		handle := func(e *eventbus.Event) {
 			if e != nil {
 				defer e.Done()
 			}
-			resp, err := cm.Client().MasterShard().ListShards(context.TODO(), &master_shard.ListShardsRequest{NodeHostId: lo.ToPtr(cm.NodeHostID())}, runtime.WithClientStale(true))
+			events, err := ReconcileSubShardChangingEvents(cm)
 			if err != nil {
-				log.Println("[ERROR]", fmt.Errorf("ShardSpecChangingWorker MasterShard.ListShards err: %w", err))
+				log.Println("[ERROR]", fmt.Errorf("ShardSpecChangingWorker GetSubShardChangingEvents err: %w", err))
 				return
 			}
-			nhi := cm.NodeHost().GetNodeHostInfo(dragonboat.NodeHostInfoOption{false})
-			events := diffSubShards(nhi.RaftAddress, resp.Shards, nhi.ClusterInfoList, nhi.LogInfo)
-			log.Println("[INFO]", fmt.Sprintf("ShardSpecChangingWorker %d shard changes detected", len(events)))
+			if len(events) > 0 {
+				log.Println("[INFO]", fmt.Sprintf("ShardSpecChangingWorker %d shard changes detected", len(events)))
+			}
 			for _, event := range events {
 				cm.EventBus().Publish(EventTopic_ShardSpecChanging.String(), event)
 			}
@@ -153,7 +76,7 @@ func ShardSpecChangingWorker(cm Manager) Worker {
 			timer := time.NewTimer(duration)
 			defer timer.Stop()
 			for {
-				ResetTimer(timer, duration)
+				utils.ResetTimer(timer, duration)
 				select {
 				case <-timer.C:
 					handle(nil)

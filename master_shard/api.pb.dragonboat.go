@@ -20,6 +20,8 @@ type IMasterShardDragonboatServer interface {
 	CreateShard(req *CreateShardRequest) (*CreateShardResponse, error)
 	UpdateShard(req *UpdateShardRequest) (*UpdateShardResponse, error)
 	DeleteShard(req *DeleteShardRequest) (*DeleteShardResponse, error)
+	GetNode(req *GetNodeRequest) (*GetNodeResponse, error)
+	UpdateNode(req *UpdateNodeRequest) (*UpdateNodeResponse, error)
 }
 
 type IMasterShardDragonboatClient interface {
@@ -30,6 +32,8 @@ type IMasterShardDragonboatClient interface {
 	CreateShard(ctx context.Context, req *CreateShardRequest, opts ...runtime.DragonboatClientOption) (*CreateShardResponse, error)
 	UpdateShard(ctx context.Context, req *UpdateShardRequest, opts ...runtime.DragonboatClientOption) (*UpdateShardResponse, error)
 	DeleteShard(ctx context.Context, req *DeleteShardRequest, opts ...runtime.DragonboatClientOption) (*DeleteShardResponse, error)
+	GetNode(ctx context.Context, req *GetNodeRequest, opts ...runtime.DragonboatClientOption) (*GetNodeResponse, error)
+	UpdateNode(ctx context.Context, req *UpdateNodeRequest, opts ...runtime.DragonboatClientOption) (*UpdateNodeResponse, error)
 }
 
 func DragonboatMasterShardLookup(s IMasterShardDragonboatServer, query interface{}) (result interface{}, err error) {
@@ -63,11 +67,17 @@ func DragonboatMasterShardLookup(s IMasterShardDragonboatServer, query interface
 			return resp, fmt.Errorf("IMasterShardServer.GetShard(%v) err: %w", q, err)
 		}
 		return resp, nil
+	case *GetNodeRequest:
+		resp, err := s.GetNode(q)
+		if err != nil {
+			return resp, fmt.Errorf("IMasterShardServer.GetNode(%v) err: %w", q, err)
+		}
+		return resp, nil
 	case *runtime.DragonboatVoid:
 		// healthcheck
 		return &runtime.DragonboatVoid{}, nil
 	default:
-		return nil, fmt.Errorf("%w(type: %T)", runtime.ErrUnknownRequest, q)
+		return nil, runtime.NewDragonboatError(runtime.ErrCodeUnknownRequest, fmt.Sprintf("ErrCodeUnknownRequest type: %T", q))
 	}
 }
 
@@ -87,11 +97,14 @@ func DragonboatMasterShardUpdateDispatch(s IMasterShardDragonboatServer, msg pro
 	case *DeleteShardRequest:
 		resp, err := s.DeleteShard(m)
 		return resp, err
+	case *UpdateNodeRequest:
+		resp, err := s.UpdateNode(m)
+		return resp, err
 	case *runtime.DragonboatVoid:
 		// dummy update increate index
 		return &runtime.DragonboatVoid{}, nil
 	default:
-		return nil, fmt.Errorf("%w(type: %T)", runtime.ErrUnknownRequest, m)
+		return nil, runtime.NewDragonboatError(runtime.ErrCodeUnknownRequest, fmt.Sprintf("ErrCodeUnknownRequest type: %T", m))
 	}
 }
 
@@ -104,7 +117,7 @@ func DragonboatMasterShardUpdate(s IMasterShardDragonboatServer, data []byte) (s
 	return runtime.MakeDragonboatResult(resp, err), nil
 }
 
-func DragonboatMasterShardConcurrencyUpdate(s IMasterShardDragonboatServer, entries []sm.Entry) ([]sm.Entry, error) {
+func DragonboatMasterShardConcurrentUpdate(s IMasterShardDragonboatServer, entries []sm.Entry) ([]sm.Entry, error) {
 	for i := range entries {
 		entry := &entries[i]
 		msg, err := runtime.ParseDragonboatRequest(entry.Cmd)
@@ -127,71 +140,37 @@ func NewMasterShardDragonboatClient(client runtime.IDragonboatClient) IMasterSha
 }
 func (it *MasterShardDragonboatClient) Healthz(ctx context.Context, req *HealthzRequest, opts ...runtime.DragonboatClientOption) (*HealthzResponse, error) {
 	resp, err := it.client.Query(ctx, req, opts...)
-	if r, ok := resp.(*HealthzResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *HealthzResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*HealthzResponse](resp, err)
 }
 func (it *MasterShardDragonboatClient) GetStateVersion(ctx context.Context, req *GetStateVersionRequest, opts ...runtime.DragonboatClientOption) (*GetStateVersionResponse, error) {
 	resp, err := it.client.Query(ctx, req, opts...)
-	if r, ok := resp.(*GetStateVersionResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *GetStateVersionResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*GetStateVersionResponse](resp, err)
 }
 func (it *MasterShardDragonboatClient) ListShards(ctx context.Context, req *ListShardsRequest, opts ...runtime.DragonboatClientOption) (*ListShardsResponse, error) {
 	resp, err := it.client.Query(ctx, req, opts...)
-	if r, ok := resp.(*ListShardsResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *ListShardsResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*ListShardsResponse](resp, err)
 }
 func (it *MasterShardDragonboatClient) GetShard(ctx context.Context, req *GetShardRequest, opts ...runtime.DragonboatClientOption) (*GetShardResponse, error) {
 	resp, err := it.client.Query(ctx, req, opts...)
-	if r, ok := resp.(*GetShardResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *GetShardResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*GetShardResponse](resp, err)
 }
 func (it *MasterShardDragonboatClient) CreateShard(ctx context.Context, req *CreateShardRequest, opts ...runtime.DragonboatClientOption) (*CreateShardResponse, error) {
 	resp, err := it.client.Mutate(ctx, req, opts...)
-	if r, ok := resp.(*CreateShardResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *CreateShardResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*CreateShardResponse](resp, err)
 }
 func (it *MasterShardDragonboatClient) UpdateShard(ctx context.Context, req *UpdateShardRequest, opts ...runtime.DragonboatClientOption) (*UpdateShardResponse, error) {
 	resp, err := it.client.Mutate(ctx, req, opts...)
-	if r, ok := resp.(*UpdateShardResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *UpdateShardResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*UpdateShardResponse](resp, err)
 }
 func (it *MasterShardDragonboatClient) DeleteShard(ctx context.Context, req *DeleteShardRequest, opts ...runtime.DragonboatClientOption) (*DeleteShardResponse, error) {
 	resp, err := it.client.Mutate(ctx, req, opts...)
-	if r, ok := resp.(*DeleteShardResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *DeleteShardResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*DeleteShardResponse](resp, err)
+}
+func (it *MasterShardDragonboatClient) GetNode(ctx context.Context, req *GetNodeRequest, opts ...runtime.DragonboatClientOption) (*GetNodeResponse, error) {
+	resp, err := it.client.Query(ctx, req, opts...)
+	return runtime.ClientResponseConversion[*GetNodeResponse](resp, err)
+}
+func (it *MasterShardDragonboatClient) UpdateNode(ctx context.Context, req *UpdateNodeRequest, opts ...runtime.DragonboatClientOption) (*UpdateNodeResponse, error) {
+	resp, err := it.client.Mutate(ctx, req, opts...)
+	return runtime.ClientResponseConversion[*UpdateNodeResponse](resp, err)
 }

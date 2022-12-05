@@ -3,6 +3,7 @@ package service;
 option go_package = "github.com/LilithGames/moxa/service";
 
 import "google/api/annotations.proto";
+import "master_shard/state.proto";
 
 message StringMessage {
   int32 id = 1;
@@ -13,6 +14,7 @@ message NodeHostInfo {
   string node_host_id = 1;
   string raft_address = 2;
   repeated ShardInfo shard_info_list = 3;
+  repeated LogShardInfo log_shard_info_list = 4;
 }
 
 message NodeInfo {
@@ -49,7 +51,10 @@ message NodeView {
 message ShardSpec {
   string shard_name = 1;
   uint64 shard_id = 2;
-  repeated NodeView nodes = 3;
+  repeated NodeView initials = 3;
+  repeated NodeView nodes = 4;
+  int32 replica = 5;
+  uint64 last_node_id = 6;
 }
 
 message ShardInfo {
@@ -62,22 +67,31 @@ message ShardInfo {
   bool is_witness = 7;
   bool pending = 8;
 }
+
+message LogShardInfo {
+  uint64 shard_id = 1;
+  uint64 node_id = 2;
+}
+
 message ShardAddNodeRequest{
   uint64 shard_id = 1;
-  int32 node_index = 2;
-  optional uint64 node_id = 3;
+  uint64 node_id = 2;
+  optional string addr = 3;
+  optional int32 node_index = 4;
 }
 message ShardAddNodeResponse{}
 message ShardRemoveNodeRequest{
   uint64 shard_id = 1;
-  int32 node_index = 2;
+  optional uint64 node_id = 2;
+  optional int32 node_index = 3;
 }
 message ShardRemoveNodeResponse{
   int32 updated = 1;
 }
 message ShardTransferLeaderRequest{
   uint64 shard_id = 1;
-  int32 node_index = 2;
+  optional uint64 node_id = 2;
+  optional int32 node_index = 3;
 }
 message ShardTransferLeaderResponse{}
 message ShardListNodeRequest{
@@ -95,15 +109,12 @@ message RemoteSnapshot {
 }
 message CreateSnapshotRequest{
   uint64 shard_id = 1;
-  bool export = 2;
-  bool force = 3;
-  bool leader = 4;
-  optional uint64 compaction_overhead = 5;
+  optional string export_path = 2;
+  optional uint64 compaction_overhead = 3;
 }
 message CreateSnapshotResponse{
   uint64 snapshot_index = 2;
   string version = 3;
-  optional RemoteSnapshot snapshot = 4;
 }
 
 service NodeHost {
@@ -129,12 +140,12 @@ service NodeHost {
   }
   rpc AddNode(ShardAddNodeRequest) returns (ShardAddNodeResponse) {
     option (google.api.http) = {
-      get: "/shard/{shard_id}/node/{node_index}/add"
+      get: "/shard/{shard_id}/node/add"
     };
   }
   rpc RemoveNode(ShardRemoveNodeRequest) returns (ShardRemoveNodeResponse) {
     option (google.api.http) = {
-      get: "/shard/{shard_id}/node/{node_index}/remove"
+      get: "/shard/{shard_id}/node/remove"
     };
   }
   rpc ListNode(ShardListNodeRequest) returns (ShardListNodeResponse) {
@@ -144,7 +155,7 @@ service NodeHost {
   }
   rpc TransferLeader(ShardTransferLeaderRequest) returns (ShardTransferLeaderResponse) {
     option (google.api.http) = {
-      get: "/shard/{shard_id}/node/{node_index}/lead"
+      get: "/shard/{shard_id}/node/lead"
     };
   }
   rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse) {
@@ -156,6 +167,7 @@ service NodeHost {
 
 message AddShardSpecRequest {
   string shard_name = 1;
+  optional int32 replica = 2;
 }
 message AddShardSpecResponse {
   ShardSpec shard = 1;
@@ -168,14 +180,133 @@ message RemoveShardSpecResponse {
 }
 message RebalanceShardSpecRequest {
   string shard_name = 1;
+  optional int32 replica = 2;
 }
 message RebalanceShardSpecResponse {
   int32 updated = 1;
 }
-message ListShardSpecRequest {}
+message ListShardSpecRequest {
+  bool status = 1;
+}
 message ListShardSpecResponse {
-  repeated ShardSpec shards = 1;
+  repeated ShardView shards = 1;
   uint64 version = 2;
+}
+message GetShardSpecRequest {
+  string shard_name = 1;
+}
+enum ShardStatusType {
+  Ready = 0;
+  Updating = 1;
+}
+message ShardStatus {
+  ShardStatusType type = 1;
+  repeated NodeStatusView nodes = 2;
+  repeated LogNodeStatusView log_nodes = 3;
+
+  optional string type_detail = 100;
+}
+message NodeStatusView {
+  string node_host_id = 1;
+  uint64 node_id = 2;
+  string addr = 3;
+  map<uint64, string> nodes = 4;
+  bool leading = 5;
+}
+message LogNodeStatusView {
+  string node_host_id = 1;
+  uint64 node_id = 2;
+  string addr = 3;
+}
+message ShardView {
+  ShardSpec spec = 1;
+  optional ShardStatus status = 2;
+}
+message GetShardSpecResponse {
+  ShardView shard = 1;
+}
+
+message MigrationNodeView{
+  uint64 node_id = 1;
+  string version = 2;
+  repeated uint64 nodes = 3;
+  uint64 epoch = 4;
+}
+message MigrationState {
+  uint64 shard_id = 1;
+  string type = 2;
+  string version = 3;
+  uint64 Epoch = 4;
+  map<uint64, MigrationNodeView> node_upgraded = 5;
+  map<uint64, MigrationNodeView> node_saved = 6;
+  uint64 state_index = 7;
+}
+message MigrationStateError {
+  uint64 shard_id = 1;
+  string error = 2;
+}
+message MigrationStateListItem {
+  oneof item {
+    MigrationState data = 1;
+    MigrationStateError err = 2;
+  }
+}
+
+message CreateMigrationRequest {
+  uint64 shard_id = 1;
+}
+message CreateMigrationResponse {
+
+}
+message QueryMigrationRequest {
+  uint64 shard_id = 1;
+}
+message QueryMigrationResponse {
+  MigrationState state = 1;
+}
+message DeleteMigrationRequest {
+  uint64 shard_id = 1;
+}
+message DeleteMigrationResponse {
+
+}
+message ListMigrationRequest {
+
+}
+message ListMigrationResponse {
+  repeated MigrationStateListItem migrations = 1;
+}
+
+message UpdateNodeSpecRequest {
+  master_shard.NodeSpec node = 2;
+}
+message UpdateNodeSpecResponse {
+  uint64 updated = 1;
+}
+
+message GetNodeSpecRequest {
+  string node_host_id = 1;
+}
+message GetNodeSpecResponse {
+  master_shard.NodeSpec node = 1;
+}
+message CordonNodeSpecRequest {
+  string node_host_id = 1;
+}
+message CordonNodeSpecResponse {
+  uint64 updated = 1;
+}
+message UncordonNodeSpecRequest {
+  string node_host_id = 1;
+}
+message UncordonNodeSpecResponse {
+  uint64 updated = 1;
+}
+message DrainNodeSpecRequest {
+  string node_host_id = 1;
+}
+message DrainNodeSpecResponse {
+  uint64 updated = 1;
 }
 
 service Spec {
@@ -197,6 +328,52 @@ service Spec {
   rpc ListShardSpec(ListShardSpecRequest) returns (ListShardSpecResponse) {
     option (google.api.http) = {
       get: "/spec/shard/list"
+    };
+  }
+  rpc GetShardSpec(GetShardSpecRequest) returns (GetShardSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/shard/{shard_name}/get"
+    };
+  }
+
+  rpc CreateMigration(CreateMigrationRequest) returns (CreateMigrationResponse) {
+    option (google.api.http) = {
+      get: "/spec/migration/{shard_id}/create"
+    };
+  }
+  rpc GetMigration(QueryMigrationRequest) returns (QueryMigrationResponse) {
+    option (google.api.http) = {
+      get: "/spec/migration/{shard_id}/get"
+    };
+  }
+  rpc ListMigration(ListMigrationRequest) returns (ListMigrationResponse) {
+    option (google.api.http) = {
+      get: "/spec/migration/list"
+    };
+  }
+  rpc UpdateNodeSpec(UpdateNodeSpecRequest) returns (UpdateNodeSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/node/update"
+    };
+  }
+  rpc GetNodeSpec(GetNodeSpecRequest) returns (GetNodeSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/node/get"
+    };
+  }
+  rpc CordonNodeSpec(CordonNodeSpecRequest) returns (CordonNodeSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/node/cordon"
+    };
+  }
+  rpc UncordonNodeSpec(UncordonNodeSpecRequest) returns (UncordonNodeSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/node/uncordon"
+    };
+  }
+  rpc DrainNodeSpec(DrainNodeSpecRequest) returns (DrainNodeSpecResponse) {
+    option (google.api.http) = {
+      get: "/spec/node/drain"
     };
   }
 }

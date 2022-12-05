@@ -5,6 +5,8 @@ proto:
 	@protoc -I. -Iproto --go_out=paths=source_relative:. ./cluster/member.proto
 	@protoc -I. -Iproto --go_out=paths=source_relative:. ./cluster/event.proto
 	@protoc -I. -Iproto --go_out=paths=source_relative:. ./cluster/snapshot.proto
+	@protoc -I. -Iproto --go_out=paths=source_relative:. ./cluster/config.proto
+	@protoc -I. -Iproto --go_out=paths=source_relative:. ./service/config.proto
 	@protoc -I. -Iproto --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. ./service/api.proto
 	@protoc -I. -Iproto --grpc-gateway_out=. --grpc-gateway_opt=logtostderr=true --grpc-gateway_opt=paths=source_relative --grpc-gateway_opt=generate_unbound_methods=true ./service/api.proto
 	@protoc -I. -Iproto --go_out=paths=source_relative:. --dragonboat_out=paths=source_relative:. ./sub_shard/api.proto
@@ -31,7 +33,7 @@ run:
 	@docker run -it --rm --entrypoint=bash $$(ko build -B github.com/LilithGames/moxa/cmd/moxa)
 
 .PHONY: install
-install:
+install: proto
 	@kubectl kustomize deploy | ko resolve -B -f - | kubectl apply -f -
 
 .PHONY: clean
@@ -40,3 +42,4 @@ clean:
 
 .PHONY: deploy
 deploy: install
+	@kubectl rollout status statefulset.apps/moxa -n temp

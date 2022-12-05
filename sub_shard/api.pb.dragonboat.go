@@ -39,7 +39,7 @@ func DragonboatSubShardLookup(s ISubShardDragonboatServer, query interface{}) (r
 		// healthcheck
 		return &runtime.DragonboatVoid{}, nil
 	default:
-		return nil, fmt.Errorf("%w(type: %T)", runtime.ErrUnknownRequest, q)
+		return nil, runtime.NewDragonboatError(runtime.ErrCodeUnknownRequest, fmt.Sprintf("ErrCodeUnknownRequest type: %T", q))
 	}
 }
 
@@ -57,7 +57,7 @@ func DragonboatSubShardUpdateDispatch(s ISubShardDragonboatServer, msg proto.Mes
 		// dummy update increate index
 		return &runtime.DragonboatVoid{}, nil
 	default:
-		return nil, fmt.Errorf("%w(type: %T)", runtime.ErrUnknownRequest, m)
+		return nil, runtime.NewDragonboatError(runtime.ErrCodeUnknownRequest, fmt.Sprintf("ErrCodeUnknownRequest type: %T", m))
 	}
 }
 
@@ -70,7 +70,7 @@ func DragonboatSubShardUpdate(s ISubShardDragonboatServer, data []byte) (sm.Resu
 	return runtime.MakeDragonboatResult(resp, err), nil
 }
 
-func DragonboatSubShardConcurrencyUpdate(s ISubShardDragonboatServer, entries []sm.Entry) ([]sm.Entry, error) {
+func DragonboatSubShardConcurrentUpdate(s ISubShardDragonboatServer, entries []sm.Entry) ([]sm.Entry, error) {
 	for i := range entries {
 		entry := &entries[i]
 		msg, err := runtime.ParseDragonboatRequest(entry.Cmd)
@@ -93,21 +93,9 @@ func NewSubShardDragonboatClient(client runtime.IDragonboatClient) ISubShardDrag
 }
 func (it *SubShardDragonboatClient) Get(ctx context.Context, req *GetRequest, opts ...runtime.DragonboatClientOption) (*GetResponse, error) {
 	resp, err := it.client.Query(ctx, req, opts...)
-	if r, ok := resp.(*GetResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *GetResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*GetResponse](resp, err)
 }
 func (it *SubShardDragonboatClient) Incr(ctx context.Context, req *IncrRequest, opts ...runtime.DragonboatClientOption) (*IncrResponse, error) {
 	resp, err := it.client.Mutate(ctx, req, opts...)
-	if r, ok := resp.(*IncrResponse); ok {
-		return r, err
-	} else if err != nil {
-		return nil, err
-	} else {
-		return nil, fmt.Errorf("cannot parse %T response type to *IncrResponse", resp)
-	}
+	return runtime.ClientResponseConversion[*IncrResponse](resp, err)
 }

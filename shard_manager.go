@@ -5,32 +5,37 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
+	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
 	"github.com/hashicorp/go-multierror"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
 	sm "github.com/lni/dragonboat/v3/statemachine"
+	"github.com/lni/goutils/syncutil"
 	"github.com/samber/lo"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/LilithGames/moxa/cluster"
-	"github.com/LilithGames/moxa/master_shard"
 	"github.com/LilithGames/moxa/service"
+	"github.com/LilithGames/moxa/utils"
 )
 
 var ErrInitialMemberNotEnough error = errors.New("ErrInitialMemberNotEnough")
 
 type ShardManager struct {
-	cm     cluster.Manager
-	client service.IClient
-	fn     any
+	cm      cluster.Manager
+	client  service.IClient
+	master  any
+	fn      any
+	stopper *syncutil.Stopper
 }
 
-func NewShardManager(cm cluster.Manager, client service.IClient, fn interface{}) (*ShardManager, error) {
-	return &ShardManager{cm, client, fn}, nil
+func NewShardManager(cm cluster.Manager, client service.IClient, master any, fn any) (*ShardManager, error) {
+	return &ShardManager{cm, client, master, fn, syncutil.NewStopper()}, nil
+}
+
+func (it *ShardManager) Stop() {
+	it.stopper.Stop()
 }
 
 func (it *ShardManager) getMasterInitialMembers() map[uint64]string {
@@ -44,109 +49,17 @@ func (it *ShardManager) getMasterInitialMembers() map[uint64]string {
 	return imembers
 }
 
-func RetryWithDelay(ctx context.Context, max int, delay time.Duration, fn func() (bool, error)) error {
-	var err error
-	var retry bool
-	for i := 0; i < max; i++ {
-		retry, err = fn()
-		if err == nil {
-			return nil
-		}
-		if !retry {
-			return err
-		}
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	return err
-}
-
-func ParallelMap[T comparable, R any](items []T, fn func(item T) (R, error)) (map[T]R, error) {
-	ch := make(chan lo.Tuple2[T, R], len(items))
-	ech := make(chan error, len(items))
-	wg := sync.WaitGroup{}
-	for _, item := range items {
-		wg.Add(1)
-		go func(arg T) {
-			defer wg.Done()
-			r, err := fn(arg)
-			if err != nil {
-				ech <- err
-			} else {
-				ch <- lo.T2(arg, r)
-			}
-		}(item)
-	}
-	wg.Wait()
-	close(ch)
-	close(ech)
-	errs := lo.ChannelToSlice(ech)
-	err := multierror.Append(nil, errs...).ErrorOrNil()
-	r := lo.SliceToMap(lo.ChannelToSlice(ch), func(t lo.Tuple2[T, R]) (T, R) {
-		return t.A, t.B
-	})
-	return r, err
-}
-
-func RemoteSnapshotSiri(src *service.RemoteSnapshot) *cluster.RemoteSnapshot {
-	return &cluster.RemoteSnapshot{
-		Index:      src.Index,
-		Version:    src.Version,
-		Path:       src.Path,
-		NodeHostId: src.NodeHostId,
-		Nodes:      src.Nodes,
-	}
-}
-
-func (it *ShardManager) PrepareSnapshots(ctx context.Context) (map[uint64]*cluster.RemoteSnapshot, error) {
-	nodeIDs := it.cm.GetLogNodeIDs()
-	shardIDs := lo.MapToSlice(nodeIDs, func(shardID uint64, nodeID uint64) uint64 {
-		return shardID
-	})
-	snapshots, err := ParallelMap(shardIDs, func(shardID uint64) (*cluster.RemoteSnapshot, error) {
-		var snapshot *cluster.RemoteSnapshot
-		if err := RetryWithDelay(ctx, 3, time.Second*5, func() (bool, error) {
-			if resp, err := it.client.NodeHost().CreateSnapshot(ctx, &service.CreateSnapshotRequest{ShardId: shardID, Export: true, Leader: true}); err != nil {
-				if e, ok := status.FromError(err); ok {
-					if e.Code() == codes.AlreadyExists {
-						if _, err := it.client.NodeHost().ShardNop(ctx, &service.ShardNopRequest{ShardId: shardID}); err != nil {
-							return true, fmt.Errorf("ShardNop err: %w", err)
-						}
-						return true, fmt.Errorf("client.CreateSnapshot err: %w", err)
-					} else if e.Code() == codes.Unavailable {
-						return true, fmt.Errorf("client.CreateSnapshot err: %w", err)
-					}
-				}
-				return false, fmt.Errorf("client.CreateSnapshot err: %w", err)
-			} else {
-				snapshot = RemoteSnapshotSiri(resp.Snapshot)
-				return false, nil
-			}
-		}); err != nil {
-			if it.cm.RecoverMode() {
-				if _, herr := it.client.NodeHost().ShardHealthz(ctx, &service.ShardHealthzRequest{ShardId: shardID}); herr != nil {
-					log.Println("[WARN]", fmt.Errorf("RecoverMode: skip prepare snapshot from unhealth shard %d, the may cause unconsistency in shard: %w, %v", shardID, err, herr))
-					return nil, nil
-				}
-			}
-			return nil, fmt.Errorf("Migration RetryWithDelay err: %w", err)
-		}
-		return snapshot, nil
-	})
-	return lo.OmitByValues(snapshots, []*cluster.RemoteSnapshot{nil}), err
-}
-
 func (it *ShardManager) ServeMasterShard(ctx context.Context) error {
 	shardID := cluster.MasterShardID
-	fn := sm.CreateStateMachineFunc(master_shard.NewStateMachine)
 	conf := it.GetShardConfig(shardID, it.cm.MasterNodeID())
 	if it.cm.NodeHost().HasNodeInfo(shardID, it.cm.MasterNodeID()) {
 		// recovery
+		if it.cm.GetNodeID(cluster.MasterShardID) != nil {
+			// already recovery, skip
+			return nil
+		}
 		log.Printf("[INFO] shardmanager: decided to recovery shard %d\n", shardID)
-		if err := it.StartCluster(map[uint64]string{}, false, fn, conf); err != nil {
+		if err := it.StartCluster(map[uint64]string{}, false, it.master, conf); err != nil {
 			if errors.Is(err, dragonboat.ErrClusterAlreadyExist) {
 				return nil
 			}
@@ -160,16 +73,16 @@ func (it *ShardManager) ServeMasterShard(ctx context.Context) error {
 			if len(initials) < int(it.cm.MinClusterSize()) {
 				return ErrInitialMemberNotEnough
 			}
-			if err := it.StartCluster(initials, false, fn, conf); err != nil {
+			if err := it.StartCluster(initials, false, it.master, conf); err != nil {
 				return fmt.Errorf("CreateShard %d err: %w", shardID, err)
 			}
 		} else {
 			// join shard
 			log.Printf("[INFO] shardmanager: decided to join shard %d\n", shardID)
-			if _, err := it.client.NodeHost().AddNode(ctx, &service.ShardAddNodeRequest{ShardId: shardID, NodeIndex: it.cm.NodeHostIndex()}); err != nil {
-				return fmt.Errorf("AddNode err: %w", err)
+			if err := it.JoinShard(ctx, shardID, it.cm.MasterNodeID()); err != nil {
+				return fmt.Errorf("JoinShard err: %w", err)
 			}
-			if err := it.StartCluster(map[uint64]string{}, true, fn, conf); err != nil {
+			if err := it.StartCluster(map[uint64]string{}, true, it.master, conf); err != nil {
 				return fmt.Errorf("JoinShard %d err: %w", shardID, err)
 			}
 		}
@@ -201,12 +114,8 @@ func (it *ShardManager) ServeSubShard(ctx context.Context, shardID uint64, nodeI
 		} else {
 			// join shard
 			log.Printf("[INFO] shardmanager: decided to join subshard %d, nodeID: %d\n", shardID, nodeID)
-			if _, err := it.client.NodeHost().AddNode(ctx, &service.ShardAddNodeRequest{
-				ShardId:   shardID,
-				NodeIndex: it.cm.NodeHostIndex(),
-				NodeId:    &nodeID,
-			}); err != nil {
-				return fmt.Errorf("JoinSubShard %d add node err: %w", shardID, err)
+			if err := it.JoinShard(ctx, shardID, nodeID); err != nil {
+				return fmt.Errorf("JoinShard err: %w", err)
 			}
 			if err := it.StartCluster(map[uint64]string{}, true, it.fn, conf); err != nil {
 				return fmt.Errorf("JoinSubShard %d start cluster err: %w", shardID, err)
@@ -216,10 +125,22 @@ func (it *ShardManager) ServeSubShard(ctx context.Context, shardID uint64, nodeI
 	return nil
 }
 
+func (it *ShardManager) JoinShard(ctx context.Context, shardID uint64, nodeID uint64) error {
+	if _, err := it.client.NodeHost().AddNode(ctx, &service.ShardAddNodeRequest{
+		ShardId: shardID,
+		NodeId:  nodeID,
+		Addr:    lo.ToPtr(it.cm.RaftAddress()),
+	}); err != nil {
+		return fmt.Errorf("NodeHost().AddNode(%d, %d) err: %w", shardID, nodeID, err)
+	}
+	return nil
+}
+
 func (it *ShardManager) WaitServeMasterShard(ctx context.Context) error {
-	err := RetryWithDelay(ctx, 20*60, time.Second*3, func() (bool, error) {
+	err := utils.RetryWithDelay(ctx, 20*60, time.Second*3, func() (bool, error) {
 		if err := it.ServeMasterShard(ctx); err != nil {
 			if errors.Is(err, ErrInitialMemberNotEnough) {
+				log.Println("[INFO]", fmt.Sprintf("shardmanager: ErrInitialMemberNotEnough retrying"))
 				return true, err
 			}
 			return false, err
@@ -229,6 +150,13 @@ func (it *ShardManager) WaitServeMasterShard(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("WaitServeMasterShard timeout err: %w", err)
 	}
+	if err := it.WaitShardReady(ctx, cluster.MasterShardID, 60*30); err != nil {
+		return fmt.Errorf("WaitShardReady(%d) err: %w", cluster.MasterShardID, err)
+	}
+	if err := it.ReconcileMigration(ctx, cluster.MasterShardID); err != nil {
+		return fmt.Errorf("ReconcileMigration(%d) err: %w", cluster.MasterShardID, err)
+	}
+
 	return nil
 }
 
@@ -250,7 +178,7 @@ func (it *ShardManager) GetShardConfig(shardID uint64, nodeID uint64) config.Con
 		NodeID:              nodeID,
 		ClusterID:           shardID,
 		CheckQuorum:         true,
-		ElectionRTT:         10,
+		ElectionRTT:         20,
 		HeartbeatRTT:        2,
 		SnapshotEntries:     100,
 		CompactionOverhead:  0,
@@ -266,39 +194,227 @@ func (it *ShardManager) RecoverShard(ctx context.Context, shardID uint64, nodeID
 	}
 }
 
-func (it *ShardManager) Migrate(ctx context.Context) error {
-	if it.cm.Version().Migrating() {
-		log.Println("[INFO]", fmt.Sprintf("Migration start"))
-		snapshots, err := it.PrepareSnapshots(ctx)
-		if err != nil {
-			return fmt.Errorf("PrepareSnapshots err: %w", err)
-		}
-		log.Println("[INFO]", fmt.Sprintf("PrepareSnapshots %d done", len(snapshots)))
-		if err := it.cm.ImportSnapshots(ctx, snapshots); err != nil {
-			return fmt.Errorf("ImportSnapshots err: %w", err)
-		}
-		log.Println("[INFO]", fmt.Sprintf("ImportSnapshots %d done", len(snapshots)))
+func (it *ShardManager) RemoteQueryMigration(ctx context.Context, shardID uint64) (*service.MigrationState, error) {
+	if resp, err := it.client.Spec().GetMigration(ctx, &service.QueryMigrationRequest{ShardId: shardID}); err != nil {
+		return nil, fmt.Errorf("GetMigration(%d) err: %w", shardID, err)
 	} else {
-		log.Println("[INFO]", fmt.Sprintf("CodeVersion match with DataVersion, skip migration"))
+		return resp.State, nil
+	}
+}
+
+func (it *ShardManager) PrepareMigration(ctx context.Context, shardID uint64) error {
+	err := utils.RetryWithDelay(ctx, 10, time.Second*2, func() (bool, error) {
+		if _, err := it.client.Spec().CreateMigration(ctx, &service.CreateMigrationRequest{ShardId: shardID}); err != nil {
+			dcode := runtime.GetDragonboatErrorCode(service.GrpcErrorToDragonboatError(err))
+			if dcode == runtime.ErrCodeMigrationExpired {
+				return true, fmt.Errorf("CreateMigration(%d) err: %w", shardID, err)
+			} else if dcode == runtime.ErrCodeAlreadyMigrating {
+				log.Println("[WARN]", fmt.Errorf("PrepareMigration shard %d ErrCodeAlreadyMigrating err: %w", shardID, err))
+				return false, nil
+			}
+			return false, fmt.Errorf("CreateMigration(%d) err: %w", shardID, err)
+		}
+		return false, nil
+	})
+	if err != nil {
+		return fmt.Errorf("RetryWithDelay err: %w", err)
 	}
 	return nil
 }
 
-func (it *ShardManager) RecoveryShards(ctx context.Context) error {
-	nodeIDs := it.cm.GetLogNodeIDs()
-	shardIDs := lo.MapToSlice(nodeIDs, func(shardID uint64, nodeID uint64) uint64 {
-		return shardID
+func (it *ShardManager) getMigrationNode(shardID uint64) *runtime.MigrationNode {
+	nodeID := it.cm.GetNodeID(shardID)
+	if nodeID == nil {
+		panic(fmt.Errorf("call getMigrationNode before recovery shard %d", shardID))
+	}
+	nodes := lo.MapValues(it.cm.GetNodes(shardID), func(_ string, sid uint64) bool {
+		return false
 	})
+	return &runtime.MigrationNode{
+		NodeId:  *nodeID,
+		Version: it.cm.Version().CodeVersion(),
+		Nodes:   nodes,
+	}
+}
 
-	_, err := ParallelMap(shardIDs, func(shardID uint64) (uint64, error) {
-		return shardID, it.RecoverShard(ctx, shardID, nodeIDs[shardID])
-	})
+var ErrMigrationShardNotReady error = errors.New("ErrMigrationShardNotReady")
+
+func (it *ShardManager) UpdateMigrationStatus(ctx context.Context, shardID uint64) error {
+	node := it.getMigrationNode(shardID)
+	if err := it.cm.Client().Migration(shardID).UpdateUpgradedNode(ctx, &runtime.DragonboatUpdateMigrationRequest{Node: node}, runtime.WithClientTimeout(time.Second*10)); err != nil {
+		return fmt.Errorf("UpdateNodeMigration err: %w", err)
+	}
+	return nil
+}
+
+func (it *ShardManager) SaveMigration(ctx context.Context, shardID uint64) error {
+	node := it.getMigrationNode(shardID)
+	if err := it.cm.Client().Migration(shardID).UpdateSavedNode(ctx, &runtime.DragonboatCompleteMigrationRequest{Node: node}, runtime.WithClientTimeout(time.Second*10)); err != nil {
+		return fmt.Errorf("UpdateSavedNode err: %w", err)
+	}
+	return nil
+}
+
+func (it *ShardManager) ReconcileMigration(ctx context.Context, shardID uint64) error {
+	q, err := it.cm.Client().Migration(shardID).QueryMigration(ctx, &runtime.DragonboatQueryMigrationRequest{}, runtime.WithClientTimeout(time.Second*3))
 	if err != nil {
-		return err
+		return fmt.Errorf("QueryMigration(%d) err: %w", shardID, err)
+	}
+	if q.View.Type == runtime.MigrationStateType_Upgrading {
+		if err := it.UpdateMigrationStatus(ctx, shardID); err != nil {
+			return fmt.Errorf("UpdateMigrationStatus(%d) err: %w", shardID, err)
+		}
+	} else if q.View.Type == runtime.MigrationStateType_Upgraded {
+		if err := it.SaveMigration(ctx, shardID); err != nil {
+			return fmt.Errorf("SaveMigration(%d) err: %w", shardID, err)
+		}
+	} else if q.View.Type == runtime.MigrationStateType_Empty || q.View.Type == runtime.MigrationStateType_Migrating || q.View.Type == runtime.MigrationStateType_Expired {
+		if err := it.cm.Client().Migration(shardID).CheckVersion(ctx, it.cm.Version().CodeVersion(), runtime.WithClientTimeout(time.Second*3)); err != nil {
+			return fmt.Errorf("CheckVersion(%d) err: %w", shardID, err)
+		}
+	}
+	return nil
+}
+
+func (it *ShardManager) RecoveryShardWithMigration(ctx context.Context, shardID uint64, nodeID uint64, seconds int) error {
+	mi, err := it.RemoteQueryMigration(ctx, shardID)
+	if err == nil {
+		if mi.Type == runtime.MigrationStateType_Empty.String() || mi.Type == runtime.MigrationStateType_Migrating.String() || mi.Type == runtime.MigrationStateType_Expired.String() {
+			if mi.Version != it.cm.Version().CodeVersion() {
+				if err := it.PrepareMigration(ctx, shardID); err != nil {
+					return fmt.Errorf("PrepareMigration err: %w", err)
+				}
+			}
+		}
 	} else {
-		it.cm.Version().Commit()
+		log.Println("[INFO]", fmt.Sprintf("ShardManager: shard %d not health, recovery without migration", shardID))
+	}
+	if err := it.RecoverShard(ctx, shardID, nodeID); err != nil {
+		return fmt.Errorf("RecoverShard err: %w", err)
+	}
+	if err := it.WaitShardReady(ctx, shardID, seconds); err != nil {
+		return fmt.Errorf("WaitShardReady err: %w", err)
+	}
+	if err := it.ReconcileMigration(ctx, shardID); err != nil {
+		if runtime.GetDragonboatErrorCode(err) == runtime.ErrCodeVersionNotMatch {
+			replica := len(it.cm.GetNodes(shardID))
+			if replica != 1 {
+				panic(err)
+			} else {
+				log.Println("[WARN]", fmt.Errorf("ShardManager: shard %d skip migration code version cause of replica is %d", shardID, replica))
+				if err := it.PrepareMigration(ctx, shardID); err != nil {
+					return fmt.Errorf("PrepareMigration after recovery err: %w", err)
+				}
+			}
+		} else {
+			return fmt.Errorf("ReconcileMigration(%d) err: %w", shardID, err)
+		}
+	}
+
+	return nil
+}
+
+func (it *ShardManager) ShardSpecChangingDispatcher(ctx context.Context, e *cluster.ShardSpecChangingEvent) error {
+	switch e.Type {
+	case cluster.ShardSpecChangingType_Adding:
+		if err := it.ServeSubShard(ctx, e.ShardId, *e.CurrentNodeId, e.CurrentNodes); err != nil {
+			return fmt.Errorf("ServeSubShard(%d) err: %w", e.ShardId, err)
+		}
+	case cluster.ShardSpecChangingType_Deleting:
+		if err := it.StopSubShard(ctx, e.ShardId, *e.PreviousNodeId, false); err != nil {
+			return fmt.Errorf("StopSubShard(%d, false) err: %w", e.ShardId, err)
+		}
+	case cluster.ShardSpecChangingType_Joining:
+		if err := it.ServeSubShard(ctx, e.ShardId, *e.CurrentNodeId, nil); err != nil {
+			return fmt.Errorf("ServeSubShard(%d) err: %w", e.ShardId, err)
+		}
+	case cluster.ShardSpecChangingType_Leaving:
+		if err := it.StopSubShard(ctx, e.ShardId, *e.PreviousNodeId, true); err != nil {
+			return fmt.Errorf("StopSubShard(%d, true) err: %w", e.ShardId, err)
+		}
+	// case cluster.ShardSpecChangingType_NodeJoining:
+		// if it.cm.IsLeader(e.ShardId) {
+			// nodeID := *e.CurrentNodeId
+			// addr := e.CurrentNodes[nodeID]
+			// if err := it.cm.Client().Raw(e.ShardId).AddNode(ctx, nodeID, addr, runtime.WithClientTimeout(time.Second*10)); err != nil {
+				// return fmt.Errorf("Client.Raw().AddNode err: %w", err)
+			// }
+		// }
+		// return nil
+	// case cluster.ShardSpecChangingType_NodeLeaving:
+		// if it.cm.IsLeader(e.ShardId) {
+			// if err := it.cm.Client().Raw(e.ShardId).RemoveNode(ctx, *e.PreviousNodeId, runtime.WithClientTimeout(time.Second*10)); err != nil {
+				// return fmt.Errorf("Client.Raw().RemoveNode err: %w", err)
+			// }
+		// }
+		// return nil
+	case cluster.ShardSpecChangingType_Cleanup:
+		if err := it.StopSubShard(ctx, e.ShardId, *e.PreviousNodeId, false); err != nil {
+			return fmt.Errorf("StopSubShard(%d) err: %w", e.ShardId, err)
+		}
+	case cluster.ShardSpecChangingType_Recovering:
+		if err := it.RecoveryShardWithMigration(ctx, e.ShardId, *e.PreviousNodeId, 60); err != nil {
+			return fmt.Errorf("RecoveryShardWithMigration(%d) err: %w", e.ShardId, err)
+		}
+	default:
+		return fmt.Errorf("unknown event.Type: %T", e.Type)
+	}
+	return nil
+}
+
+func (it *ShardManager) IsShardReady(ctx context.Context, shardID uint64) error {
+	if err := it.cm.Client().Void(shardID).VoidQuery(ctx, runtime.WithClientTimeout(time.Second)); err != nil {
+		return fmt.Errorf("VoidQuery(%d) err: %w", shardID, err)
+	}
+	return nil
+}
+
+func (it *ShardManager) WaitShardReady(ctx context.Context, shardID uint64, seconds int) error {
+	if err := utils.RetryWithDelay(ctx, seconds, time.Second, func() (bool, error) {
+		if err := it.IsShardReady(ctx, shardID); err != nil {
+			log.Println("[INFO]", fmt.Sprintf("Waiting shard %d ready", shardID))
+			return true, fmt.Errorf("%w: %v", ErrMigrationShardNotReady, err)
+		}
+		return false, nil
+	}); err != nil {
+		return fmt.Errorf("RetryWithDelay err: %w", err)
+	}
+	return nil
+}
+
+func (it *ShardManager) LogEvents(events []*cluster.ShardSpecChangingEvent) {
+	dict := lo.GroupBy(events, func(e *cluster.ShardSpecChangingEvent) cluster.ShardSpecChangingType {
+		return e.Type
+	})
+	log.Println("[INFO]", fmt.Sprintf("ShardSpec changing events: Recovering: %d, Adding: %d, Cleanup: %d",
+		len(dict[cluster.ShardSpecChangingType_Recovering]),
+		len(dict[cluster.ShardSpecChangingType_Adding]),
+		len(dict[cluster.ShardSpecChangingType_Cleanup]),
+	))
+}
+
+func (it *ShardManager) RecoveryShards(ctx context.Context) error {
+	if !it.cm.NodeHost().HasNodeInfo(cluster.MasterShardID, it.cm.MasterNodeID()) {
+		log.Println("[INFO]", fmt.Sprintf("MasterShard not exists, skip RecoveryShards"))
 		return nil
 	}
+	if err := it.RecoveryShardWithMigration(ctx, cluster.MasterShardID, it.cm.MasterNodeID(), 600); err != nil {
+		return fmt.Errorf("RecoveryShardWithMigration MasterShard err: %w", err)
+	}
+	events, err := cluster.ReconcileSubShardChangingEvents(it.cm)
+	if err != nil {
+		return fmt.Errorf("ReconcileSubShardChangingEvents err: %w", err)
+	}
+	it.LogEvents(events)
+	if _, err := utils.ParallelMap(events, func(e *cluster.ShardSpecChangingEvent) (uint64, error) {
+		if err := it.ShardSpecChangingDispatcher(ctx, e); err != nil {
+			return e.ShardId, fmt.Errorf("ShardSpecChangingDispatcher err: %w", err)
+		}
+		return e.ShardId, nil
+	}); err != nil {
+		log.Println("[WARN]", fmt.Errorf("ShardManager RecoverySubShards ParallelMap err: %w", err))
+	}
+	return nil
 }
 
 func (it *ShardManager) StopSubShard(ctx context.Context, shardID uint64, nodeID uint64, leave bool) error {
@@ -306,14 +422,16 @@ func (it *ShardManager) StopSubShard(ctx context.Context, shardID uint64, nodeID
 		return fmt.Errorf("stop master shard is prohibitted")
 	}
 	if leave {
-		if _, err := it.client.NodeHost().RemoveNode(ctx, &service.ShardRemoveNodeRequest{ShardId: shardID, NodeIndex: it.cm.NodeHostIndex()}); err != nil {
-			return fmt.Errorf("client.Shard().RemoveNode(%d) err: %w", shardID, err)
+		if err := it.cm.Client().Raw(shardID).RemoveNode(ctx, nodeID, runtime.WithClientTimeout(time.Second*10)); err != nil {
+			if !errors.Is(err, dragonboat.ErrClusterNotFound) {
+				return fmt.Errorf("Client.Raw.RemoveNode err: %w", err)
+			}
 		}
 	}
 	if err := it.cm.NodeHost().StopNode(shardID, nodeID); err != nil && !errors.Is(err, dragonboat.ErrClusterNotFound) {
 		return fmt.Errorf("NodeHost().StopCluster(%d) err: %w", shardID, err)
 	}
-	if err := RetryWithDelay(ctx, 3, time.Second, func() (bool, error) {
+	if err := utils.RetryWithDelay(ctx, 3, time.Second, func() (bool, error) {
 		if err := it.cm.NodeHost().RemoveData(shardID, nodeID); err != nil {
 			if errors.Is(err, dragonboat.ErrClusterNotStopped) {
 				return true, fmt.Errorf("NodeHost().RemoveData(%d, %d) err: %w", shardID, nodeID, err)

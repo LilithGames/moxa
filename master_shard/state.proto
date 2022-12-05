@@ -8,20 +8,31 @@ message Node {
   string addr = 3;
 }
 
+message NodeSpec {
+  uint64 state_version = 1;
+  string node_host_id = 2;
+  map<string, string> labels = 3;
+}
+
 // StateMachine
 message ShardSpec {
   uint64 state_version = 1;
   string shard_name = 2;
   uint64 shard_id = 3;
   int32 replica = 4;
-  map<string, Node> nodes = 5;
+  map<string, Node> initials = 5;
+  map<string, Node> nodes = 6;
+  uint64 last_node_id = 7;
 }
 
 message StateRoot {
+  //shard spec
   uint64 shards_version = 1;
   uint64 last_shard_id = 2;
-
-  // spec
-  // shardname-shard
+  // shardname-shardspec
   map<string, ShardSpec> shards = 3;
+
+  // nhid-nodespec
+  uint64 nodes_version = 4;
+  map<string, NodeSpec> nodes = 5;
 }

@@ -3,9 +3,9 @@ package service
 import (
 	"fmt"
 	"log"
-	"time"
 	"net"
 	"reflect"
+	"time"
 
 	"github.com/lni/goutils/syncutil"
 	"google.golang.org/grpc/attributes"
@@ -92,10 +92,11 @@ func (it *serviceResolver) resolve() (*resolver.State, error) {
 			}
 		}
 		addr := resolver.Address{
-			Addr:               fmt.Sprintf("%s:%s", m.Node.Addr.String(), it.target.URL.Port()),
-			ServerName:         m.Node.Name,
-			Attributes:         attributes.New("meta", &ResolverMeta{ShardIDs: shardIDs}),
+			Addr:       fmt.Sprintf("%s:%s", m.Node.Addr.String(), it.target.URL.Port()),
+			ServerName: m.Node.Name,
+			Attributes: attributes.New("meta", &ResolverMeta{ShardIDs: shardIDs}),
 		}
+		// log.Println("[INFO]", fmt.Sprintf("resolve: %s %v", addr.Addr, shardIDs))
 		addrs = append(addrs, addr)
 		return true
 	})
@@ -103,7 +104,7 @@ func (it *serviceResolver) resolve() (*resolver.State, error) {
 }
 
 func (it *serviceResolver) watcher() {
-	interval := time.Second*3
+	interval := time.Second * 3
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
 	for {
@@ -113,7 +114,7 @@ func (it *serviceResolver) watcher() {
 			interval = time.Second
 		} else {
 			it.conn.UpdateState(*state)
-			interval = time.Second*3
+			interval = time.Second * 3
 		}
 
 		timer.Stop()

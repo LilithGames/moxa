@@ -27,6 +27,7 @@ message ListShardsResponse {
 message GetStateVersionRequest {}
 message GetStateVersionResponse {
   uint64 shards_state_version = 1;
+  uint64 nodes_state_version = 2;
 }
 
 message NodeCreateView {
@@ -64,6 +65,19 @@ message GetShardResponse {
   ShardSpec shard = 1;
 }
 
+message GetNodeRequest {
+  string node_host_id = 1;
+}
+message GetNodeResponse {
+  NodeSpec node = 1;
+}
+message UpdateNodeRequest {
+  NodeSpec node = 1;
+}
+message UpdateNodeResponse {
+  uint64 updated = 1;
+}
+
 service MasterShard {
   rpc Healthz(HealthzRequest) returns (HealthzResponse);
   rpc GetStateVersion(GetStateVersionRequest) returns (GetStateVersionResponse);
@@ -77,6 +91,11 @@ service MasterShard {
     option (dragonboat.options) = { type: "mutation" };
   }
   rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse) {
+    option (dragonboat.options) = { type: "mutation" };
+  };
+
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc UpdateNode(UpdateNodeRequest) returns (UpdateNodeResponse) {
     option (dragonboat.options) = { type: "mutation" };
   };
 }

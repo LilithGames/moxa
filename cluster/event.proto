@@ -8,9 +8,14 @@ enum EventTopic {
   NodeHostNodeReady = 1000;
   NodeHostMembershipChanged = 1001;
   NodeHostLeaderUpdated = 1002;
+  NodeHostNodeUnloaded = 1003;
 
   ShardSpecUpdating = 2000;
   ShardSpecChanging = 2001;
+
+  MigrationCancellingNotify = 3000;
+  MigrationRepairingNotify = 3001;
+  MigrationChanged = 3002;
 }
 
 message NodeHostNodeReadyEvent {
@@ -29,6 +34,11 @@ message NodeHostLeaderUpdatedEvent {
   uint64 leader_id = 4;
 }
 
+message NodeHostNodeUnloadedEvent {
+  uint64 shard_id = 1;
+  uint64 node_id = 2;
+}
+
 message ShardSpecUpdatingEvent {
   uint64 state_version = 1;
 }
@@ -36,10 +46,12 @@ message ShardSpecUpdatingEvent {
 enum ShardSpecChangingType {
   Adding = 0;
   Deleting = 1;
-  NodeJoining = 2;
-  NodeLeaving = 3;
-  NodeMoving = 4;
-  Cleanup = 5;
+  Joining = 2;
+  Leaving = 3;
+  NodeJoining = 4;
+  NodeLeaving = 5;
+  Cleanup = 6;
+  Recovering = 7;
 }
 
 message ShardSpecChangingEvent {
@@ -49,4 +61,15 @@ message ShardSpecChangingEvent {
   map<uint64, string> current_nodes = 4;
   optional uint64 previous_node_id = 5;
   optional uint64 current_node_id = 6;
+}
+
+message MigrationCancellingNotifyEvent {
+  uint64 shard_id = 1;
+}
+message MigrationRepairingNotifyEvent {
+  uint64 shard_id = 1;
+}
+message MigrationChangedEvent {
+  uint64 shard_id = 1;
+  uint64 state_index = 2;
 }

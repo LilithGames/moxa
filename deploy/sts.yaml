@@ -8,7 +8,7 @@ spec:
     matchLabels:
       app: moxa
   serviceName: moxa-headless
-  replicas: 3
+  replicas: 5
   revisionHistoryLimit: 0
   podManagementPolicy: Parallel
   template:
@@ -49,8 +49,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
-            - name: share
-              mountPath: /share
           readinessProbe:
             httpGet:
               path: /healthz
@@ -60,10 +58,6 @@ spec:
             periodSeconds: 1
             successThreshold: 2
             failureThreshold: 2
-      volumes:
-        - name: share
-          persistentVolumeClaim:
-            claimName: share-moxa
   volumeClaimTemplates:
     - metadata:
         name: data
