@@ -4,7 +4,8 @@ go 1.19
 
 require (
 	github.com/LilithGames/go-event-bus/v4 v4.1.0
-	github.com/LilithGames/protoc-gen-dragonboat v0.1.8
+	github.com/LilithGames/protoc-gen-dragonboat v0.1.9
+	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.0.0-00010101000000-000000000000
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/hashicorp/logutils v1.0.0
@@ -33,7 +34,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.3-0.20201103224600-674baa8c7fc3 // indirect
 	github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
 	github.com/hashicorp/go-msgpack v0.5.3 // indirect

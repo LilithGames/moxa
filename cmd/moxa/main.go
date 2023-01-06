@@ -5,25 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-	"net/http"
-	_ "net/http/pprof"
-
 
 	"github.com/hashicorp/logutils"
 	"github.com/lni/goutils/syncutil"
+
 	// "github.com/lni/dragonboat/v3/statemachine"
 	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
+	"github.com/lni/dragonboat/v3/config"
 
 	"github.com/LilithGames/moxa"
 	"github.com/LilithGames/moxa/cluster"
-	"github.com/LilithGames/moxa/service"
 	"github.com/LilithGames/moxa/master_shard"
-	"github.com/LilithGames/moxa/sub_shard"
+	"github.com/LilithGames/moxa/service"
 	"github.com/LilithGames/moxa/sub_service"
+	"github.com/LilithGames/moxa/sub_shard"
 	"github.com/LilithGames/moxa/utils"
 )
 
@@ -40,6 +41,9 @@ func SignalHandler(stopper *syncutil.Stopper, signals ...os.Signal) {
 	})
 }
 
+var masterShardVersion = ""
+var subShardVersion = ""
+
 func main() {
 	stopper := syncutil.NewStopper()
 	ctx := utils.BindContext(stopper, context.Background())
@@ -52,16 +56,43 @@ func main() {
 	})
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	conf := &cluster.Config{
-		NodeHostDir: "/data/nodehost",
+		NodeHostDir:     "/data/nodehost",
 		LocalStorageDir: "/data/storage",
-		MemberSeed: []string{"moxa-headless:7946"},
-		RecoveryMode: true,
-		MigrationPolicy: cluster.MigrationPolicy_Auto,
+		MemberSeed:      []string{"moxa-headless:7946"},
+		RttMillisecond:  1,
+		DeploymentId:    0,
+		EnableMetrics:   false,
 	}
 	sconf := &service.Config{
 		HttpPort: 8000,
 		GrpcPort: 8001,
 	}
+	master := &moxa.ShardProfiler{
+		CreateFn: runtime.NewMigrationStateMachineWrapper(master_shard.NewStateMachine),
+		Config: config.Config{
+			CheckQuorum:         true,
+			ElectionRTT:         10,
+			HeartbeatRTT:        1,
+			SnapshotEntries:     100,
+			CompactionOverhead:  0,
+			OrderedConfigChange: true,
+		},
+		Version: masterShardVersion,
+	}
+	sub := &moxa.ShardProfiler{
+		CreateFn: runtime.NewMigrationStateMachineWrapper(sub_shard.NewExampleStateMachine),
+		Config: config.Config{
+			CheckQuorum:         true,
+			ElectionRTT:         10,
+			HeartbeatRTT:        1,
+			SnapshotEntries:     100,
+			CompactionOverhead:  0,
+			OrderedConfigChange: true,
+		},
+		Version: subShardVersion,
+	}
+	log.Println("[INFO]", fmt.Sprintf("MasterShardVersion: %s", masterShardVersion))
+	log.Println("[INFO]", fmt.Sprintf("SubShardVersion: %s", subShardVersion))
 
 	cm, err := cluster.NewKubernetesManager(ctx, conf)
 	if err != nil {
@@ -92,10 +123,7 @@ func main() {
 		}
 	})
 
-	sm, err := moxa.NewShardManager(cm, sc,
-		runtime.NewMigrationStateMachineWrapper(master_shard.NewStateMachine),
-		runtime.NewMigrationStateMachineWrapper(sub_shard.NewExampleStateMachine),
-	)
+	sm, err := moxa.NewShardManager(cm, sc, master, sub)
 	if err != nil {
 		log.Fatalln("NewShardManager err: ", err)
 	}

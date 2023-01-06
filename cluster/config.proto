@@ -2,16 +2,11 @@ syntax = "proto3";
 package cluster;
 option go_package = "github.com/LilithGames/moxa/cluster";
 
-enum MigrationPolicy {
-  Auto = 0;
-  Always = 1;
-  Never = 2;
-}
-
 message Config {
   string node_host_dir = 1;
   string local_storage_dir = 2;
   repeated string member_seed = 3;
-  bool recovery_mode = 4;
-  MigrationPolicy migration_policy = 5;
+  uint64 rtt_millisecond = 4;
+  uint64 deployment_id = 5;
+  bool enable_metrics = 6;
 }

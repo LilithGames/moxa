@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"reflect"
 
 	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
 	gruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -17,10 +18,12 @@ import (
 
 	"github.com/LilithGames/moxa/cluster"
 	"github.com/LilithGames/moxa/master_shard"
+	"github.com/LilithGames/moxa/utils"
 )
 
 type NodeHostService struct {
 	cm cluster.Manager
+	client IClient
 	UnimplementedNodeHostServer
 }
 
@@ -103,6 +106,116 @@ func (it *NodeHostService) RemoveNode(ctx context.Context, req *ShardRemoveNodeR
 	return &ShardRemoveNodeResponse{Updated: 1}, nil
 }
 
+func (it *NodeHostService) SyncAddNode(ctx context.Context, req *SyncAddNodeRequest) (*SyncAddNodeResponse, error) {
+	var addr string
+	if req.Addr != nil {
+		addr = *req.Addr
+	} else if req.NodeIndex != nil {
+		if meta := it.getMember(*req.NodeIndex); meta != nil {
+			addr = meta.RaftAddress
+		} else {
+			return nil, status.Errorf(codes.InvalidArgument, "NodeIndex %d not found", *req.NodeIndex)
+		}
+	} else {
+		return nil, status.Errorf(codes.InvalidArgument, "Addr or NodeIndex required")
+	}
+
+	var updated uint64
+	err := utils.RetryWithDelay(ctx, 5, time.Millisecond*10, func() (bool, error) {
+		membership, err := it.cm.NodeHost().SyncGetClusterMembership(ctx, req.ShardId)
+		if err != nil {
+			return false, fmt.Errorf("NodeHost.SyncGetClusterMembership(%d) err: %w", req.ShardId, err)
+		}
+		if _, ok := membership.Nodes[req.NodeId]; ok {
+			return false, nil
+		}
+		if req.Force == nil || !(*req.Force) {
+			if !it.ShardFullHealthz(req.ShardId, membership) {
+				return false, fmt.Errorf("shard %d not fully healthz", req.ShardId)
+			}
+		}
+		if err := it.cm.NodeHost().SyncRequestAddNode(ctx, req.ShardId, req.NodeId, addr, membership.ConfigChangeID); err != nil {
+			if errors.Is(err, dragonboat.ErrRejected) {
+				return true, fmt.Errorf("SyncRequestAddNode(%v, %d) err: %w", req, membership.ConfigChangeID, err)
+			}
+			return false, fmt.Errorf("SyncRequestAddNode(%v, %d) err: %w", req, membership.ConfigChangeID, err)
+		}
+		updated = 1
+		return false, nil
+	})
+	if err != nil {
+		return &SyncAddNodeResponse{}, fmt.Errorf("RetryWithDelay err: %w", err)
+	}
+	return &SyncAddNodeResponse{Updated: updated}, nil
+}
+
+func (it *NodeHostService) SyncRemoveNode(ctx context.Context, req *SyncRemoveNodeRequest) (*SyncRemoveNodeResponse, error) {
+	var nodeID uint64
+	if req.NodeId != nil {
+		nodeID = *req.NodeId
+	} else if req.NodeIndex != nil {
+		if meta := it.getMember(*req.NodeIndex); meta != nil {
+			if nid := it.getNodeID(req.ShardId, meta.RaftAddress); nid != nil {
+				nodeID = *nid
+			} else {
+				return nil, status.Errorf(codes.InvalidArgument, "nodeID of NodeIndex %d not found", *req.NodeIndex)
+			}
+		} else {
+			return nil, status.Errorf(codes.InvalidArgument, "NodeIndex %d not found", *req.NodeIndex)
+		}
+	} else {
+		return nil, status.Errorf(codes.InvalidArgument, "NodeId or NodeIndex required")
+	}
+
+	var updated uint64
+	err := utils.RetryWithDelay(ctx, 5, time.Millisecond*10, func() (bool, error) {
+		membership, err := it.cm.NodeHost().SyncGetClusterMembership(ctx, req.ShardId)
+		if err != nil {
+			return false, fmt.Errorf("NodeHost.SyncGetClusterMembership(%d) err: %w", req.ShardId, err)
+		}
+		if _, ok := membership.Nodes[nodeID]; !ok {
+			return false, nil
+		}
+		if req.Force == nil || !(*req.Force) {
+			if !it.ShardFullHealthz(req.ShardId, membership) {
+				return false, fmt.Errorf("shard %d not fully healthz", req.ShardId)
+			}
+		}
+		if err := it.cm.NodeHost().SyncRequestDeleteNode(ctx, req.ShardId, nodeID, membership.ConfigChangeID); err != nil {
+			if errors.Is(err, dragonboat.ErrRejected) {
+				return true, fmt.Errorf("SyncRequestDeleteNode(%v, %d) err: %w", req, membership.ConfigChangeID, err)
+			}
+			return false, fmt.Errorf("SyncRequestDeleteNode(%v, %d) err: %w", req, membership.ConfigChangeID, err)
+		}
+		updated = 1
+		return false, nil
+	})
+	if err != nil {
+		return &SyncRemoveNodeResponse{}, fmt.Errorf("RetryWithDelay err: %w", err)
+	}
+	return &SyncRemoveNodeResponse{Updated: updated}, nil
+
+}
+
+func (it *NodeHostService) ShardFullHealthz(shardID uint64, membership *dragonboat.Membership) bool {
+	spec := membership.Nodes
+	status := make(map[uint64]string, 0)
+	it.cm.Members().Foreach(func(m cluster.MemberNode) bool {
+		if m.State != nil {
+			if shard, ok := m.State.Shards[shardID]; ok {
+				if reflect.DeepEqual(spec, shard.Nodes) {
+					status[shard.NodeId] = m.Meta.RaftAddress
+				} else {
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return reflect.DeepEqual(spec, status)
+
+}
+
 func (it *NodeHostService) ListNode(ctx context.Context, req *ShardListNodeRequest) (*ShardListNodeResponse, error) {
 	nis := it.getNodeInfos(req.ShardId)
 	return &ShardListNodeResponse{Nodes: nis}, nil
@@ -148,7 +261,7 @@ func (it *NodeHostService) CreateSnapshot(ctx context.Context, req *CreateSnapsh
 		}
 		return nil, status.Errorf(codes.Internal, "SyncRequestSnapshot(%d) err: %v", err)
 	}
-	return &CreateSnapshotResponse{SnapshotIndex: index, Version: it.cm.Version().DataVersion()}, nil
+	return &CreateSnapshotResponse{SnapshotIndex: index}, nil
 }
 
 func (it *NodeHostService) getMember(nhIndex int32) *cluster.MemberMeta {
@@ -200,7 +313,6 @@ func (it *NodeHostService) getNodeInfos(shardID uint64) []*NodeInfo {
 			Addr:       m.Meta.RaftAddress,
 			Following:  true,
 			Leading:    isLeader,
-			Version:    m.Meta.CodeHash,
 		}
 	})
 }

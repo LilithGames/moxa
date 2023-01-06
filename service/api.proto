@@ -25,7 +25,6 @@ message NodeInfo {
   string addr = 5;
   bool   following = 6;
   bool   leading = 7;
-  string  version = 8;
 }
 
 message HealthzRequest {}
@@ -100,21 +99,35 @@ message ShardListNodeRequest{
 message ShardListNodeResponse{
   repeated NodeInfo nodes = 1;
 }
-message RemoteSnapshot {
-  uint64 index = 1;
-  string version = 2;
-  string path = 3;
-  string node_host_id = 4;
-  map<uint64, string> nodes = 5;
-}
 message CreateSnapshotRequest{
   uint64 shard_id = 1;
   optional string export_path = 2;
   optional uint64 compaction_overhead = 3;
 }
 message CreateSnapshotResponse{
-  uint64 snapshot_index = 2;
-  string version = 3;
+  uint64 snapshot_index = 1;
+}
+
+message SyncAddNodeRequest {
+  uint64 shard_id = 1;
+  uint64 node_id = 2;
+  optional string addr = 3;
+  optional int32 node_index = 4;
+
+  optional bool force = 100;
+}
+message SyncAddNodeResponse {
+  uint64 updated = 1;
+}
+message SyncRemoveNodeRequest {
+  uint64 shard_id = 1;
+  optional uint64 node_id = 2;
+  optional int32 node_index = 3;
+
+  optional bool force = 100;
+}
+message SyncRemoveNodeResponse {
+  uint64 updated = 1;
 }
 
 service NodeHost {
@@ -146,6 +159,16 @@ service NodeHost {
   rpc RemoveNode(ShardRemoveNodeRequest) returns (ShardRemoveNodeResponse) {
     option (google.api.http) = {
       get: "/shard/{shard_id}/node/remove"
+    };
+  }
+  rpc SyncAddNode(SyncAddNodeRequest) returns (SyncAddNodeResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/node/sync_add"
+    };
+  }
+  rpc SyncRemoveNode(SyncRemoveNodeRequest) returns (SyncRemoveNodeResponse) {
+    option (google.api.http) = {
+      get: "/shard/{shard_id}/node/sync_remove"
     };
   }
   rpc ListNode(ShardListNodeRequest) returns (ShardListNodeResponse) {
@@ -196,15 +219,13 @@ message GetShardSpecRequest {
   string shard_name = 1;
 }
 enum ShardStatusType {
-  Ready = 0;
+  Unknown = 0;
   Updating = 1;
+  Ready = 2;
 }
 message ShardStatus {
-  ShardStatusType type = 1;
   repeated NodeStatusView nodes = 2;
   repeated LogNodeStatusView log_nodes = 3;
-
-  optional string type_detail = 100;
 }
 message NodeStatusView {
   string node_host_id = 1;
@@ -218,9 +239,16 @@ message LogNodeStatusView {
   uint64 node_id = 2;
   string addr = 3;
 }
+message ShardHealthzView {
+  bool healthz = 5;
+  optional string healthz_detail = 6;
+}
 message ShardView {
   ShardSpec spec = 1;
   optional ShardStatus status = 2;
+  ShardStatusType type = 3;
+  optional string type_detail = 4;
+  ShardHealthzView healthz = 5;
 }
 message GetShardSpecResponse {
   ShardView shard = 1;
@@ -285,25 +313,29 @@ message UpdateNodeSpecResponse {
 }
 
 message GetNodeSpecRequest {
-  string node_host_id = 1;
+  optional string node_host_id = 1;
+  optional int32 node_index = 2;
 }
 message GetNodeSpecResponse {
   master_shard.NodeSpec node = 1;
 }
 message CordonNodeSpecRequest {
-  string node_host_id = 1;
+  optional string node_host_id = 1;
+  optional int32 node_index = 2;
 }
 message CordonNodeSpecResponse {
   uint64 updated = 1;
 }
 message UncordonNodeSpecRequest {
-  string node_host_id = 1;
+  optional string node_host_id = 1;
+  optional int32 node_index = 2;
 }
 message UncordonNodeSpecResponse {
   uint64 updated = 1;
 }
 message DrainNodeSpecRequest {
-  string node_host_id = 1;
+  optional string node_host_id = 1;
+  optional int32 node_index = 2;
 }
 message DrainNodeSpecResponse {
   uint64 updated = 1;

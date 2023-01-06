@@ -53,14 +53,15 @@ func ShardSpecUpdatingWorker(cm Manager) Worker {
 
 func ShardSpecChangingWorker(cm Manager) Worker {
 	return func(stopper *syncutil.Stopper) error {
-		handle := func(e *eventbus.Event) {
+		maxDuration := time.Second * 30
+		handle := func(e *eventbus.Event) time.Duration {
 			if e != nil {
 				defer e.Done()
 			}
 			events, err := ReconcileSubShardChangingEvents(cm)
 			if err != nil {
 				log.Println("[ERROR]", fmt.Errorf("ShardSpecChangingWorker GetSubShardChangingEvents err: %w", err))
-				return
+				return maxDuration
 			}
 			if len(events) > 0 {
 				log.Println("[INFO]", fmt.Sprintf("ShardSpecChangingWorker %d shard changes detected", len(events)))
@@ -68,20 +69,24 @@ func ShardSpecChangingWorker(cm Manager) Worker {
 			for _, event := range events {
 				cm.EventBus().Publish(EventTopic_ShardSpecChanging.String(), event)
 			}
+			if len(events) > 0 {
+				return time.Second * 3
+			}
+			return maxDuration
 		}
 		stopper.RunWorker(func() {
 			shardsUpdating, sub := cm.EventBus().Subscribe(EventTopic_ShardSpecUpdating.String())
 			defer sub.Close()
-			duration := time.Second * 30
+			duration := maxDuration
 			timer := time.NewTimer(duration)
 			defer timer.Stop()
 			for {
 				utils.ResetTimer(timer, duration)
 				select {
 				case <-timer.C:
-					handle(nil)
+					duration = handle(nil)
 				case e := <-shardsUpdating:
-					handle(&e)
+					duration = handle(&e)
 				case <-stopper.ShouldStop():
 					return
 				}

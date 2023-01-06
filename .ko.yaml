@@ -1,2 +1,9 @@
 # https://ko.build/configuration/
 defaultBaseImage: golang:1.19-buster
+builds:
+  - id: moxa
+    dir: .
+    main: ./cmd/moxa
+    ldflags:
+      - -X main.masterShardVersion={{.Env.MVERSION}}
+      - -X main.subShardVersion={{.Env.SVERSION}}

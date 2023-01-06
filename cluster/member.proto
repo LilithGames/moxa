@@ -13,8 +13,7 @@ message MemberMeta {
   int32  node_host_index = 4;
   uint64 master_node_id = 5;
   int64  startup_timestamp = 6;
-  string code_hash = 7;
-  MemberType type = 8;
+  MemberType type = 7;
 }
 
 message MemberShard {

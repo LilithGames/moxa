@@ -16,7 +16,6 @@ type Manager interface {
 	Members() IMembers
 	EventBus() *eventbus.EventBus
 	Client() IClient
-	Version() IVersionManager
 	Config() *Config
 	StartupReady() *Signal
 

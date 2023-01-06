@@ -1,3 +1,9 @@
+define KO
+MVERSION=$$(go run github.com/LilithGames/moxa/tools/pkghash -short -pkg github.com/LilithGames/moxa/master_shard) \
+SVERSION=$$(go run github.com/LilithGames/moxa/tools/pkghash -short -pkg github.com/LilithGames/moxa/sub_shard) \
+ko
+endef
+
 .PHONY: proto
 proto:
 	@protoc -I. -Iproto --go_out=paths=source_relative:. ./master_shard/state.proto
@@ -22,7 +28,7 @@ clean-proto:
 
 .PHONY: build-image
 build-image: proto
-	@ko build -B github.com/LilithGames/moxa/cmd/moxa
+	@$(KO) build -B github.com/LilithGames/moxa/cmd/moxa
 
 .PHONY: build
 build: proto
@@ -30,11 +36,11 @@ build: proto
 
 .PHONY: run
 run:
-	@docker run -it --rm --entrypoint=bash $$(ko build -B github.com/LilithGames/moxa/cmd/moxa)
+	@docker run -it --rm --entrypoint=bash $$($(KO) build -B github.com/LilithGames/moxa/cmd/moxa)
 
 .PHONY: install
 install: proto
-	@kubectl kustomize deploy | ko resolve -B -f - | kubectl apply -f -
+	@kubectl kustomize deploy | $(KO) resolve -B -f - | kubectl apply -f -
 
 .PHONY: clean
 clean:

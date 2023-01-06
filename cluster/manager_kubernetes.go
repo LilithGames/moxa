@@ -23,8 +23,6 @@ type KubernetesManager struct {
 	ms      IMembers
 	bus     *eventbus.EventBus
 	cc      IClient
-	store   IStorage
-	version IVersionManager
 	ready   *Signal
 
 	*NodeHostHelper
@@ -34,19 +32,10 @@ func NewKubernetesManager(ctx context.Context, config *Config) (Manager, error) 
 	if err := validateKubernetesEnvs(); err != nil {
 		return nil, fmt.Errorf("validateKubernetesEnvs err: %w", err)
 	}
-	store := NewLocalStorage(config.LocalStorageDir)
-	version, err := NewVersionManager(store, config.MigrationPolicy)
-	if err != nil {
-		return nil, fmt.Errorf("NewVersionManager err: %w", err)
-	}
-	log.Println("[INFO]", fmt.Sprintf("DataVersion: %s", version.DataVersion()))
-	log.Println("[INFO]", fmt.Sprintf("CodeVersion: %s", version.CodeVersion()))
 	it := &KubernetesManager{
 		config:  config,
 		nh:      NewProvider[*dragonboat.NodeHost](nil),
 		bus:     eventbus.NewEventBus(),
-		store:   store,
-		version: version,
 		ready:   NewSignal(false),
 	}
 	if err := it.startNodeHost(); err != nil {
@@ -60,7 +49,6 @@ func NewKubernetesManager(ctx context.Context, config *Config) (Manager, error) 
 		NodeHostIndex:    it.NodeHostIndex(),
 		MasterNodeId:     it.MasterNodeID(),
 		StartupTimestamp: time.Now().Unix(),
-		CodeHash:         it.version.CodeVersion(),
 		Type:             MemberType_Dragonboat,
 	}
 	ms, err := NewMembers(meta, it.bus, config.MemberSeed)
@@ -87,12 +75,14 @@ func NewKubernetesManager(ctx context.Context, config *Config) (Manager, error) 
 func (it *KubernetesManager) startNodeHost() error {
 	listener := &eventListener{bus: it.bus}
 	nhconf := config.NodeHostConfig{
+		DeploymentID:        it.config.DeploymentId,
 		NodeHostDir:         it.config.NodeHostDir,
 		AddressByNodeHostID: false,
-		RTTMillisecond:      100,
+		RTTMillisecond:      it.config.RttMillisecond,
 		RaftAddress:         fmt.Sprintf("%s.%s.%s.svc.cluster.local:63000", os.Getenv("POD_NAME"), os.Getenv("POD_SERVICENAME"), os.Getenv("POD_NAMESPACE")),
 		RaftEventListener:   listener,
 		SystemEventListener: listener,
+		EnableMetrics:       it.config.EnableMetrics,
 	}
 	nh, err := dragonboat.NewNodeHost(nhconf)
 	if err != nil {
@@ -100,10 +90,6 @@ func (it *KubernetesManager) startNodeHost() error {
 	}
 	it.nh.Set(nh)
 	return nil
-}
-
-func (it *KubernetesManager) Version() IVersionManager {
-	return it.version
 }
 
 func (it *KubernetesManager) NodeHost() *dragonboat.NodeHost {

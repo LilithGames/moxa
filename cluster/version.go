@@ -18,31 +18,22 @@ type IVersionManager interface {
 
 type VersionManager struct {
 	code  string
-	policy MigrationPolicy
 	store IStorage
 }
 
-func NewVersionManager(store IStorage, policy MigrationPolicy) (IVersionManager, error) {
+func NewVersionManager(store IStorage) (IVersionManager, error) {
 	code, err := getExecutableSHA256()
 	if err != nil {
 		return nil, fmt.Errorf("getExecutableSHA256 err: %w", err)
 	}
-	return &VersionManager{store: store, policy: policy, code: code[0:8]}, nil
+	return &VersionManager{store: store, code: code[0:8]}, nil
 }
 
 func (it *VersionManager) Migrating() bool {
-	if it.policy == MigrationPolicy_Always {
-		return true
-	} else if it.policy == MigrationPolicy_Never {
+	if it.DataVersion() == "" {
 		return false
-	} else if it.policy == MigrationPolicy_Auto {
-		if it.DataVersion() == "" {
-			return false
-		}
-		return it.CodeVersion() != it.DataVersion()
-	} else {
-		panic(fmt.Errorf("unknown policy type: %d", it.policy))
 	}
+	return it.CodeVersion() != it.DataVersion()
 }
 
 func (it *VersionManager) CodeVersion() string {

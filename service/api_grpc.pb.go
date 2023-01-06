@@ -24,6 +24,8 @@ type NodeHostClient interface {
 	ShardNop(ctx context.Context, in *ShardNopRequest, opts ...grpc.CallOption) (*ShardNopResponse, error)
 	AddNode(ctx context.Context, in *ShardAddNodeRequest, opts ...grpc.CallOption) (*ShardAddNodeResponse, error)
 	RemoveNode(ctx context.Context, in *ShardRemoveNodeRequest, opts ...grpc.CallOption) (*ShardRemoveNodeResponse, error)
+	SyncAddNode(ctx context.Context, in *SyncAddNodeRequest, opts ...grpc.CallOption) (*SyncAddNodeResponse, error)
+	SyncRemoveNode(ctx context.Context, in *SyncRemoveNodeRequest, opts ...grpc.CallOption) (*SyncRemoveNodeResponse, error)
 	ListNode(ctx context.Context, in *ShardListNodeRequest, opts ...grpc.CallOption) (*ShardListNodeResponse, error)
 	TransferLeader(ctx context.Context, in *ShardTransferLeaderRequest, opts ...grpc.CallOption) (*ShardTransferLeaderResponse, error)
 	CreateSnapshot(ctx context.Context, in *CreateSnapshotRequest, opts ...grpc.CallOption) (*CreateSnapshotResponse, error)
@@ -91,6 +93,24 @@ func (c *nodeHostClient) RemoveNode(ctx context.Context, in *ShardRemoveNodeRequ
 	return out, nil
 }
 
+func (c *nodeHostClient) SyncAddNode(ctx context.Context, in *SyncAddNodeRequest, opts ...grpc.CallOption) (*SyncAddNodeResponse, error) {
+	out := new(SyncAddNodeResponse)
+	err := c.cc.Invoke(ctx, "/service.NodeHost/SyncAddNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeHostClient) SyncRemoveNode(ctx context.Context, in *SyncRemoveNodeRequest, opts ...grpc.CallOption) (*SyncRemoveNodeResponse, error) {
+	out := new(SyncRemoveNodeResponse)
+	err := c.cc.Invoke(ctx, "/service.NodeHost/SyncRemoveNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nodeHostClient) ListNode(ctx context.Context, in *ShardListNodeRequest, opts ...grpc.CallOption) (*ShardListNodeResponse, error) {
 	out := new(ShardListNodeResponse)
 	err := c.cc.Invoke(ctx, "/service.NodeHost/ListNode", in, out, opts...)
@@ -128,6 +148,8 @@ type NodeHostServer interface {
 	ShardNop(context.Context, *ShardNopRequest) (*ShardNopResponse, error)
 	AddNode(context.Context, *ShardAddNodeRequest) (*ShardAddNodeResponse, error)
 	RemoveNode(context.Context, *ShardRemoveNodeRequest) (*ShardRemoveNodeResponse, error)
+	SyncAddNode(context.Context, *SyncAddNodeRequest) (*SyncAddNodeResponse, error)
+	SyncRemoveNode(context.Context, *SyncRemoveNodeRequest) (*SyncRemoveNodeResponse, error)
 	ListNode(context.Context, *ShardListNodeRequest) (*ShardListNodeResponse, error)
 	TransferLeader(context.Context, *ShardTransferLeaderRequest) (*ShardTransferLeaderResponse, error)
 	CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotResponse, error)
@@ -155,6 +177,12 @@ func (UnimplementedNodeHostServer) AddNode(context.Context, *ShardAddNodeRequest
 }
 func (UnimplementedNodeHostServer) RemoveNode(context.Context, *ShardRemoveNodeRequest) (*ShardRemoveNodeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveNode not implemented")
+}
+func (UnimplementedNodeHostServer) SyncAddNode(context.Context, *SyncAddNodeRequest) (*SyncAddNodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncAddNode not implemented")
+}
+func (UnimplementedNodeHostServer) SyncRemoveNode(context.Context, *SyncRemoveNodeRequest) (*SyncRemoveNodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncRemoveNode not implemented")
 }
 func (UnimplementedNodeHostServer) ListNode(context.Context, *ShardListNodeRequest) (*ShardListNodeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListNode not implemented")
@@ -286,6 +314,42 @@ func _NodeHost_RemoveNode_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeHost_SyncAddNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncAddNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeHostServer).SyncAddNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.NodeHost/SyncAddNode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeHostServer).SyncAddNode(ctx, req.(*SyncAddNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeHost_SyncRemoveNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncRemoveNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeHostServer).SyncRemoveNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.NodeHost/SyncRemoveNode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeHostServer).SyncRemoveNode(ctx, req.(*SyncRemoveNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NodeHost_ListNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ShardListNodeRequest)
 	if err := dec(in); err != nil {
@@ -370,6 +434,14 @@ var NodeHost_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveNode",
 			Handler:    _NodeHost_RemoveNode_Handler,
+		},
+		{
+			MethodName: "SyncAddNode",
+			Handler:    _NodeHost_SyncAddNode_Handler,
+		},
+		{
+			MethodName: "SyncRemoveNode",
+			Handler:    _NodeHost_SyncRemoveNode_Handler,
 		},
 		{
 			MethodName: "ListNode",

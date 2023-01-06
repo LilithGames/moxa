@@ -29,23 +29,28 @@ func MigrationChangedWorker(cm Manager) Worker {
 						return 0, fmt.Errorf("Client().Migration(%d).QueryIndex() err: %w", shardID, err)
 					}
 					if prev, ok := index.Load(shardID); !ok {
+						log.Println("[INFO]", fmt.Sprintf("MigrationChangedWorker: migration %d changed () -> %d", shardID, resp.StateIndex))
 						cm.EventBus().Publish(EventTopic_MigrationChanged.String(), &MigrationChangedEvent{ShardId: shardID, StateIndex: resp.StateIndex})
 						index.Store(shardID, resp.StateIndex)
 					} else if resp.StateIndex > prev || force {
+						if !force {
+							log.Println("[INFO]", fmt.Sprintf("MigrationChangedWorker: migration %d changed %d -> %d (%t)", shardID, prev, resp.StateIndex, force))
+						}
 						cm.EventBus().Publish(EventTopic_MigrationChanged.String(), &MigrationChangedEvent{ShardId: shardID, StateIndex: resp.StateIndex})
 						index.Store(shardID, resp.StateIndex)
 					}
 					return resp.StateIndex, nil
 				})
 				if err != nil {
-					log.Println("[WARN]", fmt.Errorf("MigrationUpdating ParallelMap err: %w", err))
+					log.Println("[WARN]", fmt.Errorf("MigrationChangedWorker: MigrationUpdating ParallelMap err: %w", err))
 				}
+				// log.Println("[INFO]", fmt.Sprintf("MigrationChangedWorker: all migration change event done"))
 			}
 
-			duration := time.Second * 30
+			duration := time.Second * 3
 			timer := time.NewTimer(duration)
 			defer timer.Stop()
-			tick := time.NewTicker(time.Minute)
+			tick := time.NewTicker(time.Second*30)
 			defer tick.Stop()
 			memberChanged, sub := cm.EventBus().Subscribe(EventTopic_NodeHostMembershipChanged.String())
 			defer sub.Close()

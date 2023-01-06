@@ -96,6 +96,12 @@ func (it *NodeHostClientWrapper) AddNode(ctx context.Context, in *ShardAddNodeRe
 func (it *NodeHostClientWrapper) RemoveNode(ctx context.Context, in *ShardRemoveNodeRequest, opts ...grpc.CallOption) (*ShardRemoveNodeResponse, error) {
 	return it.NodeHostClient.RemoveNode(WithRouteShard(ctx, in.ShardId), in, opts...)
 }
+func (it *NodeHostClientWrapper) SyncAddNode(ctx context.Context, in *SyncAddNodeRequest, opts ...grpc.CallOption) (*SyncAddNodeResponse, error) {
+	return it.NodeHostClient.SyncAddNode(WithRouteShard(ctx, in.ShardId), in, opts...)
+}
+func (it *NodeHostClientWrapper) SyncRemoveNode(ctx context.Context, in *SyncRemoveNodeRequest, opts ...grpc.CallOption) (*SyncRemoveNodeResponse, error) {
+	return it.NodeHostClient.SyncRemoveNode(WithRouteShard(ctx, in.ShardId), in, opts...)
+}
 func (it *NodeHostClientWrapper) ListNode(ctx context.Context, in *ShardListNodeRequest, opts ...grpc.CallOption) (*ShardListNodeResponse, error) {
 	return it.NodeHostClient.ListNode(WithRouteShard(ctx, in.ShardId), in, opts...)
 }

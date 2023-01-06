@@ -7,14 +7,18 @@ import (
 	"sort"
 	"time"
 	"errors"
+	"log"
 
 	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
 	gruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/samber/lo"
 	"github.com/lni/dragonboat/v3"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/codes"
 
 	"github.com/LilithGames/moxa/cluster"
 	"github.com/LilithGames/moxa/master_shard"
+	"github.com/LilithGames/moxa/utils"
 )
 
 type SpecService struct {
@@ -77,7 +81,7 @@ func (it *SpecService) ListShardSpec(ctx context.Context, req *ListShardSpecRequ
 
 	var views []*ShardView
 	if req.Status {
-		views = it.getShardView(specs...)
+		views = it.getShardView(ctx, specs...)
 	} else {
 		views = lo.Map(specs, func(spec *ShardSpec, _ int) *ShardView {
 			return &ShardView{Spec: spec}
@@ -130,14 +134,38 @@ func (it *SpecService) getShardStatus() map[uint64]*ShardStatus {
 	return result
 }
 
-func (it *SpecService) getShardView(specs ...*ShardSpec) []*ShardView {
+func (it *SpecService) getShardHealthz(ctx context.Context, shardIDs []uint64) map[uint64]*ShardHealthzView {
+	views, err := utils.ParallelMap(shardIDs, func(shardID uint64) (*ShardHealthzView, error) {
+		if err := it.cm.Client().Void(shardID).VoidQuery(ctx, runtime.WithClientTimeout(time.Second)); err != nil {
+			if errors.Is(err, dragonboat.ErrClusterNotFound) {
+				if _, err := it.client.NodeHost().ShardHealthz(ctx, &ShardHealthzRequest{ShardId: shardID}); err != nil {
+					return &ShardHealthzView{Healthz: false, HealthzDetail: lo.ToPtr(err.Error())}, nil
+				}
+				return &ShardHealthzView{Healthz: true}, nil
+			}
+			return &ShardHealthzView{Healthz: false, HealthzDetail: lo.ToPtr(err.Error())}, nil
+		}
+		return &ShardHealthzView{Healthz: true}, nil
+	})
+	if err != nil {
+		log.Println("[WARN] getShardHealthz impossible cause: err is not nil")
+	}
+	return views
+}
+
+func (it *SpecService) getShardView(ctx context.Context, specs ...*ShardSpec) []*ShardView {
 	result := make([]*ShardView, 0, len(specs))
 	status := it.getShardStatus()
+	shards := lo.MapToSlice(status, utils.Tuple2Arg1[uint64, *ShardStatus])
+	healthz := it.getShardHealthz(ctx, shards)
 	for _, spec := range specs {
 		view := ShardView{Spec: spec}
 		if s, ok := status[spec.ShardId]; ok {
-			s.Type, s.TypeDetail = it.getShardStatusType(spec, s)
+			view.Type, view.TypeDetail = it.getShardStatusType(spec, s)
 			view.Status = s
+		}
+		if h, ok := healthz[spec.ShardId]; ok {
+			view.Healthz = h
 		}
 		result = append(result, &view)
 	}
@@ -180,7 +208,7 @@ func (it *SpecService) GetShardSpec(ctx context.Context, req *GetShardSpecReques
 	if err != nil {
 		return &GetShardSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("Client().MasterShard().GetShard() err: %w", err))
 	}
-	views := it.getShardView(ShardSpecSiri(resp.Shard))
+	views := it.getShardView(ctx, ShardSpecSiri(resp.Shard))
 	return &GetShardSpecResponse{Shard: views[0]}, nil
 
 }
@@ -247,46 +275,108 @@ func (it *SpecService) UpdateNodeSpec(ctx context.Context, req *UpdateNodeSpecRe
 	return &UpdateNodeSpecResponse{Updated: resp.Updated}, nil
 }
 func (it *SpecService) GetNodeSpec(ctx context.Context, req *GetNodeSpecRequest) (*GetNodeSpecResponse, error) {
-	resp, err := it.cm.Client().MasterShard().GetNode(ctx, &master_shard.GetNodeRequest{NodeHostId: req.NodeHostId})
+	var nhid string
+	if req.NodeHostId != nil {
+		nhid = *req.NodeHostId
+	} else if req.NodeIndex != nil {
+		if meta := it.getMember(*req.NodeIndex); meta != nil {
+			nhid = meta.NodeHostId
+		} else {
+			return nil, status.Errorf(codes.InvalidArgument, "NodeIndex %d not found", req.NodeIndex)
+		}
+	} else {
+		return nil, status.Errorf(codes.InvalidArgument, "NodeHostId or NodeIndex required")
+	}
+
+	resp, err := it.cm.Client().MasterShard().GetNode(ctx, &master_shard.GetNodeRequest{NodeHostId: nhid})
 	if err != nil {
 		return &GetNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().GetNode(%s) err: %w", req.NodeHostId, err))
 	}
 	return &GetNodeSpecResponse{Node: resp.Node}, nil
 }
 func (it *SpecService) CordonNodeSpec(ctx context.Context, req *CordonNodeSpecRequest) (*CordonNodeSpecResponse, error) {
-	resp, err := it.cm.Client().MasterShard().GetNode(ctx, &master_shard.GetNodeRequest{NodeHostId: req.NodeHostId})
-	if err != nil {
-		return &CordonNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().GetNode(%s) err: %w", req.NodeHostId, err))
+	var nhid string
+	if req.NodeHostId != nil {
+		nhid = *req.NodeHostId
+	} else if req.NodeIndex != nil {
+		if meta := it.getMember(*req.NodeIndex); meta != nil {
+			nhid = meta.NodeHostId
+		} else {
+			return nil, status.Errorf(codes.InvalidArgument, "NodeIndex %d not found", req.NodeIndex)
+		}
+	} else {
+		return nil, status.Errorf(codes.InvalidArgument, "NodeHostId or NodeIndex required")
 	}
-	if v, ok := resp.Node.Labels["builtin.exclude"]; ok && v == "true" {
-		return &CordonNodeSpecResponse{Updated: 0}, nil
-	}
-	resp.Node.Labels["builtin.exclude"] = "true"
-	resp2, err := it.cm.Client().MasterShard().UpdateNode(ctx, &master_shard.UpdateNodeRequest{Node: resp.Node})
+
+	spec := &master_shard.NodeSpec{NodeHostId: nhid, Labels: map[string]string{"builtin.exclude": "true"}}
+	resp, err := it.cm.Client().MasterShard().GetNode(ctx, &master_shard.GetNodeRequest{NodeHostId: nhid})
 	if err != nil {
-		return &CordonNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().UpdateNode(%s) err: %w", req.NodeHostId, err))
+		if runtime.GetDragonboatErrorCode(err) != int32(master_shard.ErrCode_NotFound) {
+			return &CordonNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().GetNode(%s) err: %w", nhid, err))
+		}
+	} else {
+		if v, ok := resp.Node.Labels["builtin.exclude"]; ok && v == "true" {
+			return &CordonNodeSpecResponse{Updated: 0}, nil
+		}
+		resp.Node.Labels["builtin.exclude"] = "true"
+		spec = resp.Node
+	}
+	resp2, err := it.cm.Client().MasterShard().UpdateNode(ctx, &master_shard.UpdateNodeRequest{Node: spec})
+	if err != nil {
+		return &CordonNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().UpdateNode(%s) err: %w", nhid, err))
 	}
 	return &CordonNodeSpecResponse{Updated: resp2.Updated}, nil
 }
 func (it *SpecService) UncordonNodeSpec(ctx context.Context, req *UncordonNodeSpecRequest) (*UncordonNodeSpecResponse, error) {
-	resp, err := it.cm.Client().MasterShard().GetNode(ctx, &master_shard.GetNodeRequest{NodeHostId: req.NodeHostId})
-	if err != nil {
-		return &UncordonNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().GetNode(%s) err: %w", req.NodeHostId, err))
+	var nhid string
+	if req.NodeHostId != nil {
+		nhid = *req.NodeHostId
+	} else if req.NodeIndex != nil {
+		if meta := it.getMember(*req.NodeIndex); meta != nil {
+			nhid = meta.NodeHostId
+		} else {
+			return nil, status.Errorf(codes.InvalidArgument, "NodeIndex %d not found", req.NodeIndex)
+		}
+	} else {
+		return nil, status.Errorf(codes.InvalidArgument, "NodeHostId or NodeIndex required")
 	}
-	if _, ok := resp.Node.Labels["builtin.exclude"]; !ok {
-		return &UncordonNodeSpecResponse{Updated: 0}, nil
-	}
-	delete(resp.Node.Labels, "builtin.exclude")
-	resp2, err := it.cm.Client().MasterShard().UpdateNode(ctx, &master_shard.UpdateNodeRequest{Node: resp.Node})
+
+	spec := &master_shard.NodeSpec{NodeHostId: nhid}
+	resp, err := it.cm.Client().MasterShard().GetNode(ctx, &master_shard.GetNodeRequest{NodeHostId: nhid})
 	if err != nil {
-		return &UncordonNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().UpdateNode(%s) err: %w", req.NodeHostId, err))
+		if runtime.GetDragonboatErrorCode(err) != int32(master_shard.ErrCode_NotFound) {
+			return &UncordonNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().GetNode(%s) err: %w", nhid, err))
+		}
+	} else {
+		if _, ok := resp.Node.Labels["builtin.exclude"]; !ok {
+			return &UncordonNodeSpecResponse{Updated: 0}, nil
+		}
+		delete(resp.Node.Labels, "builtin.exclude")
+		spec = resp.Node
+	}
+	resp2, err := it.cm.Client().MasterShard().UpdateNode(ctx, &master_shard.UpdateNodeRequest{Node: spec})
+	if err != nil {
+		return &UncordonNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().UpdateNode(%s) err: %w", nhid, err))
 	}
 	return &UncordonNodeSpecResponse{Updated: resp2.Updated}, nil
 }
 func (it *SpecService) DrainNodeSpec(ctx context.Context, req *DrainNodeSpecRequest) (*DrainNodeSpecResponse, error) {
-	resp, err := it.cm.Client().MasterShard().ListShards(ctx, &master_shard.ListShardsRequest{NodeHostId: &req.NodeHostId})
+	var nhid string
+	if req.NodeHostId != nil {
+		nhid = *req.NodeHostId
+	} else if req.NodeIndex != nil {
+		if meta := it.getMember(*req.NodeIndex); meta != nil {
+			nhid = meta.NodeHostId
+		} else {
+			return nil, status.Errorf(codes.InvalidArgument, "NodeIndex %d not found", req.NodeIndex)
+		}
+	} else {
+		return nil, status.Errorf(codes.InvalidArgument, "NodeHostId or NodeIndex required")
+	}
+
+	resp, err := it.cm.Client().MasterShard().ListShards(ctx, &master_shard.ListShardsRequest{NodeHostId: &nhid})
 	if err != nil {
-		return &DrainNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().ListShards(%s) err: %w", req.NodeHostId, err))
+		return &DrainNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().ListShards(%s) err: %w", nhid, err))
 	}
 	nodes := it.getNodeCreateViews()
 	var updated uint64
@@ -299,3 +389,16 @@ func (it *SpecService) DrainNodeSpec(ctx context.Context, req *DrainNodeSpecRequ
 	}
 	return &DrainNodeSpecResponse{Updated: updated}, nil
 }
+
+func (it *SpecService) getMember(nhIndex int32) *cluster.MemberMeta {
+	var member *cluster.MemberMeta
+	it.cm.Members().Foreach(func(m cluster.MemberNode) bool {
+		if m.Meta.NodeHostIndex == nhIndex {
+			member = m.Meta
+			return false
+		}
+		return true
+	})
+	return member
+}
+
