@@ -30,16 +30,29 @@ clean-proto:
 build-image: proto
 	@$(KO) build -B github.com/LilithGames/moxa/cmd/moxa
 
+
+.PHONY: build-linux
+build-linux: proto
+	@GOOS=linux go build -o bin/ github.com/LilithGames/moxa/cmd/...
+
+.PHONY: build-base-mage
+build-base-mage: build-linux
+	@docker-compose -f deploy/docker-compose.yaml build moxactl
+
 .PHONY: build
 build: proto
 	@go build -o bin/ github.com/LilithGames/moxa/cmd/...
 
 .PHONY: run
-run:
+run: build-base-mage
 	@docker run -it --rm --entrypoint=bash $$($(KO) build -B github.com/LilithGames/moxa/cmd/moxa)
 
+.PHONY: run-ctl
+run-ctl: build
+	@bin/moxactl.exe $@
+
 .PHONY: install
-install: proto
+install: build-base-mage
 	@kubectl kustomize deploy | $(KO) resolve -B -f - | kubectl apply -f -
 
 .PHONY: clean

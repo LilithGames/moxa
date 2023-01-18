@@ -1,5 +1,5 @@
 # https://ko.build/configuration/
-defaultBaseImage: golang:1.19-buster
+defaultBaseImage: ko.local/moxactl:latest
 builds:
   - id: moxa
     dir: .

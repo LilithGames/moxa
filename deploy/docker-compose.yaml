@@ -1,8 +1,8 @@
 version: '2.1'
 
 services:
-  moxa:
+  moxactl:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: moxa:latest
+    image: ko.local/moxactl:latest
