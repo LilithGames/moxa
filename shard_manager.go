@@ -18,11 +18,15 @@ import (
 	"github.com/LilithGames/moxa/cluster"
 	"github.com/LilithGames/moxa/service"
 	"github.com/LilithGames/moxa/utils"
+	"github.com/LilithGames/moxa/master_shard"
 )
 
+var MasterProfileName = "MasterProfile"
 var ErrInitialMemberNotEnough error = errors.New("ErrInitialMemberNotEnough")
+var ErrProfileNameNotFound error = errors.New("ErrProfileNameNotFound")
 
-type ShardProfiler struct {
+type ShardProfile struct {
+	Name string
 	CreateFn any
 	Config config.Config
 	Version string
@@ -31,18 +35,32 @@ type ShardProfiler struct {
 type ShardManager struct {
 	cm      cluster.Manager
 	client  service.IClient
-	master  *ShardProfiler
-	sub     *ShardProfiler
+	profiles map[string]*ShardProfile
 	stopper *syncutil.Stopper
 }
 
 
-func NewShardManager(cm cluster.Manager, client service.IClient, master *ShardProfiler, sub *ShardProfiler) (*ShardManager, error) {
-	return &ShardManager{cm, client, master, sub, syncutil.NewStopper()}, nil
+func NewShardManager(cm cluster.Manager, client service.IClient, profiles ...*ShardProfile) (*ShardManager, error) {
+	profileDict := lo.SliceToMap(profiles, func(p *ShardProfile) (string, *ShardProfile) {
+		return p.Name, p
+	})
+	return &ShardManager{
+		cm: cm,
+		client: client,
+		profiles: profileDict,
+		stopper: syncutil.NewStopper(),
+	}, nil
 }
 
 func (it *ShardManager) Stop() {
 	it.stopper.Stop()
+}
+
+func (it *ShardManager) getProfile(name string) *ShardProfile {
+	if profile, ok := it.profiles[name]; ok {
+		return profile
+	}
+	return nil
 }
 
 func (it *ShardManager) getMasterInitialMembers() map[uint64]string {
@@ -58,7 +76,11 @@ func (it *ShardManager) getMasterInitialMembers() map[uint64]string {
 
 func (it *ShardManager) ServeMasterShard(ctx context.Context) error {
 	shardID := cluster.MasterShardID
-	conf := it.GetShardConfig(shardID, it.cm.MasterNodeID())
+	profile := it.getProfile(MasterProfileName)
+	if profile == nil {
+		return fmt.Errorf("%w: %s", ErrProfileNameNotFound, MasterProfileName)
+	}
+	conf := it.GetShardConfig(profile, shardID, it.cm.MasterNodeID())
 	if it.cm.NodeHost().HasNodeInfo(shardID, it.cm.MasterNodeID()) {
 		// recovery
 		if it.cm.GetNodeID(cluster.MasterShardID) != nil {
@@ -66,7 +88,7 @@ func (it *ShardManager) ServeMasterShard(ctx context.Context) error {
 			return nil
 		}
 		log.Printf("[INFO] shardmanager: decided to recovery shard %d\n", shardID)
-		if err := it.StartCluster(map[uint64]string{}, false, it.master.CreateFn, conf); err != nil {
+		if err := it.StartCluster(map[uint64]string{}, false, profile.CreateFn, conf); err != nil {
 			if errors.Is(err, dragonboat.ErrClusterAlreadyExist) {
 				return nil
 			}
@@ -80,7 +102,7 @@ func (it *ShardManager) ServeMasterShard(ctx context.Context) error {
 			if len(initials) < int(it.cm.MinClusterSize()) {
 				return ErrInitialMemberNotEnough
 			}
-			if err := it.StartCluster(initials, false, it.master.CreateFn, conf); err != nil {
+			if err := it.StartCluster(initials, false, profile.CreateFn, conf); err != nil {
 				return fmt.Errorf("StartCluster when creating %d err: %w", shardID, err)
 			}
 		} else {
@@ -89,7 +111,7 @@ func (it *ShardManager) ServeMasterShard(ctx context.Context) error {
 			if err := it.SyncJoinShard(ctx, shardID, it.cm.MasterNodeID()); err != nil {
 				return fmt.Errorf("SyncJoinShard err: %w", err)
 			}
-			if err := it.StartCluster(map[uint64]string{}, true, it.master.CreateFn, conf); err != nil {
+			if err := it.StartCluster(map[uint64]string{}, true, profile.CreateFn, conf); err != nil {
 				return fmt.Errorf("StartCluster when joining %d err: %w", shardID, err)
 			}
 		}
@@ -97,25 +119,29 @@ func (it *ShardManager) ServeMasterShard(ctx context.Context) error {
 	return nil
 }
 
-func (it *ShardManager) ServeSubShard(ctx context.Context, shardID uint64, nodeID uint64, initials map[uint64]string) error {
+func (it *ShardManager) ServeSubShard(ctx context.Context, profileName string, shardID uint64, nodeID uint64, initials map[uint64]string) error {
 	if shardID == cluster.MasterShardID {
 		return fmt.Errorf("don't use ServeSubShard to serve master-shard")
 	}
 	if nodeID == 0 {
 		return fmt.Errorf("nodeID must not be zero")
 	}
-	conf := it.GetShardConfig(shardID, nodeID)
+	profile := it.getProfile(profileName)
+	if profile == nil {
+		return fmt.Errorf("%w: %s", ErrProfileNameNotFound, profileName)
+	}
+	conf := it.GetShardConfig(profile, shardID, nodeID)
 	if it.cm.NodeHost().HasNodeInfo(shardID, nodeID) {
 		// recovery
 		log.Printf("[INFO] shardmanager: decided to recovery subshard %d, nodeID: %d\n", shardID, nodeID)
-		if err := it.StartCluster(map[uint64]string{}, false, it.sub.CreateFn, conf); err != nil {
+		if err := it.StartCluster(map[uint64]string{}, false, profile.CreateFn, conf); err != nil {
 			return fmt.Errorf("StartCluster when sub recovering %d err: %w", shardID, err)
 		}
 	} else {
 		if len(initials) > 0 {
 			// create shard
 			log.Printf("[INFO] shardmanager: decided to create subshard %d, nodeID: %d\n", shardID, nodeID)
-			if err := it.StartCluster(initials, false, it.sub.CreateFn, conf); err != nil {
+			if err := it.StartCluster(initials, false, profile.CreateFn, conf); err != nil {
 				return fmt.Errorf("StartCluster when sub creating %d err: %w", shardID, err)
 			}
 		} else {
@@ -124,7 +150,7 @@ func (it *ShardManager) ServeSubShard(ctx context.Context, shardID uint64, nodeI
 			if err := it.SyncJoinShard(ctx, shardID, nodeID); err != nil {
 				return fmt.Errorf("SyncJoinShard err: %w", err)
 			}
-			if err := it.StartCluster(map[uint64]string{}, true, it.sub.CreateFn, conf); err != nil {
+			if err := it.StartCluster(map[uint64]string{}, true, profile.CreateFn, conf); err != nil {
 				return fmt.Errorf("StartCluster when sub joining %d start cluster err: %w", shardID, err)
 			}
 		}
@@ -196,44 +222,45 @@ func (it *ShardManager) StartCluster(initialMembers map[uint64]dragonboat.Target
 	}
 }
 
-func (it *ShardManager) GetShardConfig(shardID uint64, nodeID uint64) config.Config {
-	if shardID == cluster.MasterShardID {
-		conf := it.master.Config
-		conf.ClusterID = shardID
-		conf.NodeID = nodeID
-		if !conf.OrderedConfigChange {
-			panic("master_shard.config.OrderedConfigChange required be true")
-		}
-		return conf
-	}
-	conf := it.sub.Config
+func (it *ShardManager) GetShardConfig(profile *ShardProfile, shardID uint64, nodeID uint64) config.Config {
+	conf := profile.Config
 	conf.ClusterID = shardID
 	conf.NodeID = nodeID
 	if !conf.OrderedConfigChange {
-		panic("sub_shard.config.OrderedConfigChange required be true")
+		panic("shard.config.OrderedConfigChange required be true")
 	}
 	return conf
 }
 
-func (it *ShardManager) GetShardVersion(shardID uint64) string {
+func (it *ShardManager) GetShardVersion(shardID uint64) (string, error) {
 	var version string
 	if shardID == cluster.MasterShardID {
-		version = it.master.Version
+		profile := it.getProfile(MasterProfileName)
+		version = profile.Version
 	} else {
-		version = it.sub.Version
+		indexQuery := &master_shard.ShardIndexQuery{Name: master_shard.ShardSpecIndex_ShardID, Value: fmt.Sprintf("%d", shardID)}
+		resp, err := it.cm.Client().MasterShard().ListShards(context.TODO(), &master_shard.ListShardsRequest{IndexQuery: indexQuery}, runtime.WithClientStale(true))
+		if err != nil {
+			return "", fmt.Errorf("ListShards(indexQuery: %d) err: %w", shardID, err)
+		}
+		spec := resp.Shards[0]
+		profile := it.getProfile(spec.ProfileName)
+		if profile == nil {
+			return "", fmt.Errorf("getProfile(%s) not found", spec.ProfileName)
+		}
+		version = profile.Version
 	}
 	if version == "" {
-		panic(fmt.Errorf("shard %d version required", shardID))
+		return "", fmt.Errorf("shard %d version required", shardID)
 	}
-	return version
+	return version, nil
 }
 
-
-func (it *ShardManager) RecoverShard(ctx context.Context, shardID uint64, nodeID uint64) error {
+func (it *ShardManager) RecoverShard(ctx context.Context, profileName string, shardID uint64, nodeID uint64) error {
 	if shardID == cluster.MasterShardID {
 		return it.ServeMasterShard(ctx)
 	} else {
-		return it.ServeSubShard(ctx, shardID, nodeID, map[uint64]string{})
+		return it.ServeSubShard(ctx, profileName, shardID, nodeID, map[uint64]string{})
 	}
 }
 
@@ -265,25 +292,32 @@ func (it *ShardManager) PrepareMigration(ctx context.Context, shardID uint64) er
 	return nil
 }
 
-func (it *ShardManager) getMigrationNode(shardID uint64) *runtime.MigrationNode {
+func (it *ShardManager) getMigrationNode(shardID uint64) (*runtime.MigrationNode, error) {
 	nodeID := it.cm.GetNodeID(shardID)
 	if nodeID == nil {
-		panic(fmt.Errorf("call getMigrationNode before recovery shard %d", shardID))
+		return nil, fmt.Errorf("call getMigrationNode before recovery shard %d", shardID)
 	}
 	nodes := lo.MapValues(it.cm.GetNodes(shardID), func(_ string, sid uint64) bool {
 		return false
 	})
+	version, err := it.GetShardVersion(shardID)
+	if err != nil {
+		return nil, fmt.Errorf("GetShardVersion(%d) err: %w", shardID, err)
+	}
 	return &runtime.MigrationNode{
 		NodeId:  *nodeID,
-		Version: it.GetShardVersion(shardID),
+		Version: version,
 		Nodes:   nodes,
-	}
+	}, nil
 }
 
 var ErrMigrationShardNotReady error = errors.New("ErrMigrationShardNotReady")
 
 func (it *ShardManager) UpdateMigrationStatus(ctx context.Context, shardID uint64) error {
-	node := it.getMigrationNode(shardID)
+	node, err := it.getMigrationNode(shardID)
+	if err != nil {
+		return fmt.Errorf("getMigrationNode(%d) err: %w", shardID, err)
+	}
 	if err := it.cm.Client().Migration(shardID).UpdateUpgradedNode(ctx, &runtime.DragonboatUpdateMigrationRequest{Node: node}, runtime.WithClientTimeout(time.Second*10)); err != nil {
 		return fmt.Errorf("UpdateNodeMigration err: %w", err)
 	}
@@ -291,7 +325,10 @@ func (it *ShardManager) UpdateMigrationStatus(ctx context.Context, shardID uint6
 }
 
 func (it *ShardManager) SaveMigration(ctx context.Context, shardID uint64) error {
-	node := it.getMigrationNode(shardID)
+	node, err := it.getMigrationNode(shardID)
+	if err != nil {
+		return fmt.Errorf("getMigrationNode(%d) err: %w", shardID, err)
+	}
 	if err := it.cm.Client().Migration(shardID).UpdateSavedNode(ctx, &runtime.DragonboatCompleteMigrationRequest{Node: node}, runtime.WithClientTimeout(time.Second*10)); err != nil {
 		return fmt.Errorf("UpdateSavedNode err: %w", err)
 	}
@@ -312,18 +349,23 @@ func (it *ShardManager) ReconcileMigration(ctx context.Context, shardID uint64) 
 			return fmt.Errorf("SaveMigration(%d) err: %w", shardID, err)
 		}
 	} else if q.View.Type == runtime.MigrationStateType_Empty || q.View.Type == runtime.MigrationStateType_Migrating || q.View.Type == runtime.MigrationStateType_Expired {
-		if err := it.cm.Client().Migration(shardID).CheckVersion(ctx, it.GetShardVersion(shardID), runtime.WithClientTimeout(time.Second*3)); err != nil {
+		version, err := it.GetShardVersion(shardID)
+		if err != nil {
+			return fmt.Errorf("GetShardVersion(%d) err: %w", shardID, err)
+		}
+		if err := it.cm.Client().Migration(shardID).CheckVersion(ctx, version, runtime.WithClientTimeout(time.Second*3)); err != nil {
 			return fmt.Errorf("CheckVersion(%d) err: %w", shardID, err)
 		}
 	}
 	return nil
 }
 
-func (it *ShardManager) RecoveryShardWithMigration(ctx context.Context, shardID uint64, nodeID uint64, seconds int) error {
+func (it *ShardManager) RecoveryShardWithMigration(ctx context.Context, profileName string, shardID uint64, nodeID uint64, seconds int) error {
 	mi, err := it.RemoteQueryMigration(ctx, shardID)
 	if err == nil {
 		if mi.Type == runtime.MigrationStateType_Empty.String() || mi.Type == runtime.MigrationStateType_Migrating.String() || mi.Type == runtime.MigrationStateType_Expired.String() {
-			if mi.Version != it.GetShardVersion(shardID) {
+			profile := it.getProfile(profileName)
+			if mi.Version != profile.Version {
 				if err := it.PrepareMigration(ctx, shardID); err != nil {
 					return fmt.Errorf("PrepareMigration err: %w", err)
 				}
@@ -332,7 +374,7 @@ func (it *ShardManager) RecoveryShardWithMigration(ctx context.Context, shardID 
 	} else {
 		log.Println("[INFO]", fmt.Sprintf("ShardManager: shard %d not health, recovery without migration", shardID))
 	}
-	if err := it.RecoverShard(ctx, shardID, nodeID); err != nil {
+	if err := it.RecoverShard(ctx, profileName, shardID, nodeID); err != nil {
 		return fmt.Errorf("RecoverShard err: %w", err)
 	}
 	if err := it.WaitShardReady(ctx, shardID, seconds); err != nil {
@@ -360,7 +402,7 @@ func (it *ShardManager) RecoveryShardWithMigration(ctx context.Context, shardID 
 func (it *ShardManager) ShardSpecChangingDispatcher(ctx context.Context, e *cluster.ShardSpecChangingEvent) error {
 	switch e.Type {
 	case cluster.ShardSpecChangingType_Adding:
-		if err := it.ServeSubShard(ctx, e.ShardId, *e.CurrentNodeId, e.CurrentNodes); err != nil {
+		if err := it.ServeSubShard(ctx, *e.ProfileName, e.ShardId, *e.CurrentNodeId, e.CurrentNodes); err != nil {
 			return fmt.Errorf("ServeSubShard(%d) err: %w", e.ShardId, err)
 		}
 	case cluster.ShardSpecChangingType_Deleting:
@@ -368,7 +410,7 @@ func (it *ShardManager) ShardSpecChangingDispatcher(ctx context.Context, e *clus
 			return fmt.Errorf("StopSubShard(%d, false) err: %w", e.ShardId, err)
 		}
 	case cluster.ShardSpecChangingType_Joining:
-		if err := it.ServeSubShard(ctx, e.ShardId, *e.CurrentNodeId, nil); err != nil {
+		if err := it.ServeSubShard(ctx, *e.ProfileName, e.ShardId, *e.CurrentNodeId, nil); err != nil {
 			return fmt.Errorf("ServeSubShard(%d) err: %w", e.ShardId, err)
 		}
 	case cluster.ShardSpecChangingType_Leaving:
@@ -398,7 +440,7 @@ func (it *ShardManager) ShardSpecChangingDispatcher(ctx context.Context, e *clus
 			return fmt.Errorf("StopSubShard(%d) err: %w", e.ShardId, err)
 		}
 	case cluster.ShardSpecChangingType_Recovering:
-		if err := it.RecoveryShardWithMigration(ctx, e.ShardId, *e.PreviousNodeId, 60); err != nil {
+		if err := it.RecoveryShardWithMigration(ctx, *e.ProfileName, e.ShardId, *e.PreviousNodeId, 60); err != nil {
 			return fmt.Errorf("RecoveryShardWithMigration(%d) err: %w", e.ShardId, err)
 		}
 	default:
@@ -443,7 +485,7 @@ func (it *ShardManager) RecoveryShards(ctx context.Context) error {
 		log.Println("[INFO]", fmt.Sprintf("MasterShard not exists, skip RecoveryShards"))
 		return nil
 	}
-	if err := it.RecoveryShardWithMigration(ctx, cluster.MasterShardID, it.cm.MasterNodeID(), 600); err != nil {
+	if err := it.RecoveryShardWithMigration(ctx, MasterProfileName, cluster.MasterShardID, it.cm.MasterNodeID(), 600); err != nil {
 		return fmt.Errorf("RecoveryShardWithMigration MasterShard err: %w", err)
 	}
 	events, err := cluster.ReconcileSubShardChangingEvents(it.cm)

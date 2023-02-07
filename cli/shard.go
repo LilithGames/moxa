@@ -27,7 +27,7 @@ var cmdShard = &cli.Command{
 			Aliases: []string{},
 			Action: actionCheckShard,
 			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "shard_name", Aliases: []string{"name", "n"}, Value: "", Usage: "shard name", Required: true},
+				&cli.StringFlag{Name: "shard_name", Aliases: []string{"name", "n"}, Value: "", Usage: "shard name"},
 				&cli.BoolFlag{Name: "all", Aliases: []string{"a"}, Value: false, Usage: "all shard"},
 			},
 		},
@@ -45,6 +45,7 @@ var cmdShard = &cli.Command{
 			Action: actionAddShard,
 			Flags: []cli.Flag{
 				&cli.StringFlag{Name: "shard_name", Aliases: []string{"name", "n"}, Value: "", Usage: "shard name", Required: true},
+				&cli.StringFlag{Name: "profile_name", Aliases: []string{"profile", "p"}, Value: "", Usage: "profile name", Required: true},
 				&cli.IntFlag{Name: "replica", Aliases: []string{}, Value: 3, Usage: "shard replica size"},
 			},
 		},
@@ -104,6 +105,8 @@ func actionCheckShard(cCtx *cli.Context) error {
 			return fmt.Errorf("client.Spec().GetShardSpec err: %w", err)
 		}
 		shards = append(shards, resp.Shard)
+	} else {
+		return fmt.Errorf("--shard_name or --all required")
 	}
 
 	for _, shard := range shards {
@@ -146,7 +149,8 @@ func actionAddShard(cCtx *cli.Context) error {
 	defer client.Close()
 
 	name := cCtx.String("shard_name")
-	spec := &service.AddShardSpecRequest{ShardName: name}
+	profile := cCtx.String("profile_name")
+	spec := &service.AddShardSpecRequest{ShardName: name, ProfileName: profile}
 	if cCtx.IsSet("replica") {
 		spec.Replica = lo.ToPtr(int32(cCtx.Int("replica")))
 	}

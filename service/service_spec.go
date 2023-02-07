@@ -37,7 +37,8 @@ func RegisterSpecService(cs *ClusterService, client IClient) {
 
 func (it *SpecService) AddShardSpec(ctx context.Context, req *AddShardSpecRequest) (*AddShardSpecResponse, error) {
 	nodes := it.getNodeCreateViews()
-	req2 := &master_shard.CreateShardRequest{Name: req.ShardName, Nodes: nodes, Replica: req.Replica}
+	nodesView := &master_shard.ShardNodesView{Nodes: nodes, Replica: req.Replica}
+	req2 := &master_shard.CreateShardRequest{Name: req.ShardName, ProfileName: req.ProfileName, NodesView: nodesView}
 	resp, err := it.cm.Client().MasterShard().CreateShard(ctx, req2)
 	if err != nil {
 		return &AddShardSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("Client().MasterShard().CreateShard(%s) err: %w", req.ShardName, err))
@@ -55,7 +56,8 @@ func (it *SpecService) RemoveShardSpec(ctx context.Context, req *RemoveShardSpec
 
 func (it *SpecService) RebalanceShardSpec(ctx context.Context, req *RebalanceShardSpecRequest) (*RebalanceShardSpecResponse, error) {
 	nodes := it.getNodeCreateViews()
-	req2 := &master_shard.UpdateShardRequest{Name: req.ShardName, Nodes: nodes, Replica: req.Replica}
+	nodesView := &master_shard.ShardNodesView{Nodes: nodes, Replica: req.Replica}
+	req2 := &master_shard.UpdateShardRequest{Name: req.ShardName, NodesView: nodesView}
 	resp, err := it.cm.Client().MasterShard().UpdateShard(ctx, req2)
 	if err != nil {
 		return &RebalanceShardSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("Client().MasterShard().UpdateShard(%s) err: %w", req.ShardName, err))
@@ -374,14 +376,14 @@ func (it *SpecService) DrainNodeSpec(ctx context.Context, req *DrainNodeSpecRequ
 		return nil, status.Errorf(codes.InvalidArgument, "NodeHostId or NodeIndex required")
 	}
 
-	resp, err := it.cm.Client().MasterShard().ListShards(ctx, &master_shard.ListShardsRequest{NodeHostId: &nhid})
+	resp, err := it.cm.Client().MasterShard().ListShards(ctx, &master_shard.ListShardsRequest{Query: lo.ToPtr(fmt.Sprintf("'%s' in it.Nodes", nhid))})
 	if err != nil {
 		return &DrainNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().ListShards(%s) err: %w", nhid, err))
 	}
 	nodes := it.getNodeCreateViews()
 	var updated uint64
 	for _, shard := range resp.Shards {
-		resp2, err := it.cm.Client().MasterShard().UpdateShard(ctx, &master_shard.UpdateShardRequest{Name: shard.ShardName, Nodes: nodes})
+		resp2, err := it.cm.Client().MasterShard().UpdateShard(ctx, &master_shard.UpdateShardRequest{Name: shard.ShardName, NodesView: &master_shard.ShardNodesView{Nodes: nodes}})
 		if err != nil {
 			return &DrainNodeSpecResponse{Updated: updated}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().UpdateShard(%s) err: %w", shard.ShardName, err))
 		}

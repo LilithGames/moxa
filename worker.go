@@ -81,7 +81,7 @@ func ShardSpecMembershipWorker(cm cluster.Manager, sm *ShardManager) cluster.Wor
 	}
 }
 
-func ShardSpecFixedSizeCreationWorker(cm cluster.Manager, size int) cluster.Worker {
+func ShardSpecFixedSizeCreationWorker(cm cluster.Manager, profileName string, size int) cluster.Worker {
 	return func(stopper *syncutil.Stopper) error {
 		ctx := context.TODO()
 		parse := func(name string) *uint64 {
@@ -125,7 +125,8 @@ func ShardSpecFixedSizeCreationWorker(cm cluster.Manager, size int) cluster.Work
 					return true
 				})
 				name := fmt.Sprintf("auto-%d", id)
-				resp, err := cm.Client().MasterShard().CreateShard(ctx, &master_shard.CreateShardRequest{Name: name, Nodes: nodes}, runtime.WithClientTimeout(time.Second*10))
+				nodesView := &master_shard.ShardNodesView{Nodes: nodes}
+				resp, err := cm.Client().MasterShard().CreateShard(ctx, &master_shard.CreateShardRequest{Name: name, ProfileName: profileName, NodesView: nodesView}, runtime.WithClientTimeout(time.Second*10))
 				if err != nil {
 					log.Println("[WARN]", fmt.Errorf("ShardSpecFixedSizeCreationWorker MasterShard().CreateShard %s err: %w", name, err))
 					return false

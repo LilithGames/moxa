@@ -2,10 +2,13 @@ package cli
 
 import (
 	"fmt"
+	"strings"
+	"strconv"
 
 	"github.com/urfave/cli/v2"
 
 	"github.com/LilithGames/moxa/service"
+	"github.com/LilithGames/moxa/cluster"
 	"github.com/samber/lo"
 )
 
@@ -21,7 +24,7 @@ var cmdNode = &cli.Command{
 			Action:  actionCordonNode,
 			Flags:   []cli.Flag{
 				&cli.StringFlag{Name: "node_host_id", Aliases: []string{"nhid"}, Value: "", Usage: "node host id"},
-				&cli.IntFlag{Name: "node_host_index", Aliases: []string{"index"}, Value: 0, Usage: "node host index"},
+				&cli.IntFlag{Name: "node_host_index", Aliases: []string{"index", "i"}, Value: 0, Usage: "node host index"},
 			},
 		},
 		{
@@ -30,7 +33,7 @@ var cmdNode = &cli.Command{
 			Action:  actionUncordonNode,
 			Flags:   []cli.Flag{
 				&cli.StringFlag{Name: "node_host_id", Aliases: []string{"nhid"}, Value: "", Usage: "node host id"},
-				&cli.IntFlag{Name: "node_host_index", Aliases: []string{"index"}, Value: 0, Usage: "node host index"},
+				&cli.IntFlag{Name: "node_host_index", Aliases: []string{"index", "i"}, Value: 0, Usage: "node host index"},
 			},
 		},
 		{
@@ -39,7 +42,17 @@ var cmdNode = &cli.Command{
 			Action:  actionDrainNode,
 			Flags:   []cli.Flag{
 				&cli.StringFlag{Name: "node_host_id", Aliases: []string{"nhid"}, Value: "", Usage: "node host id"},
-				&cli.IntFlag{Name: "node_host_index", Aliases: []string{"index"}, Value: 0, Usage: "node host index"},
+				&cli.IntFlag{Name: "node_host_index", Aliases: []string{"index", "i"}, Value: 0, Usage: "node host index"},
+			},
+		},
+		{
+			Name:    "delete",
+			Aliases: []string{},
+			Action:  actionDeleteNode,
+			Flags:   []cli.Flag{
+				&cli.StringFlag{Name: "node_host_id", Aliases: []string{"nhid"}, Value: "", Usage: "node host id"},
+				&cli.IntFlag{Name: "node_host_index", Aliases: []string{"index", "i"}, Value: 0, Usage: "node host index"},
+				&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Value: false, Usage: "force delete, may cause unhealth"},
 			},
 		},
 	},
@@ -110,3 +123,45 @@ func actionDrainNode(cCtx *cli.Context) error {
 	}
 	return nil
 }
+
+func actionDeleteNode(cCtx *cli.Context) error {
+	helper := NewHelper(cCtx)
+	client := helper.MustClient()
+	defer client.Close()
+	req := &service.SyncRemoveNodeRequest{ShardId: cluster.MasterShardID}
+	if cCtx.IsSet("node_host_id") {
+		nodeID, err := parseNodeHostID(cCtx.String("node_host_id"))
+		if err != nil {
+			return fmt.Errorf("parseNodeHostID err: %w", err)
+		}
+		req.NodeId = lo.ToPtr(nodeID)
+	} else if cCtx.IsSet("node_host_index") {
+		req.NodeIndex = lo.ToPtr(int32(cCtx.Int("node_host_index")))
+	}
+	if cCtx.IsSet("force") {
+		req.Force = lo.ToPtr(cCtx.Bool("force"))
+	}
+	resp, err := client.NodeHost().SyncRemoveNode(helper.Ctx(), req)
+	if err != nil {
+		return fmt.Errorf("client.NodeHost().SyncRemoveNode err: %w", err)
+	}
+	if resp.Updated > 0 {
+		fmt.Printf("node deleted\n")
+	} else {
+		fmt.Printf("no change\n")
+	}
+	return nil
+}
+
+func parseNodeHostID(nhid string) (uint64, error) {
+	items := strings.Split(nhid, "-")
+	if len(items) != 2 || items[0] != "nhid" {
+		return 0, fmt.Errorf("invalid nodeHostID %s", nhid)
+	}
+	id, err := strconv.ParseUint(items[len(items)-1], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid nodeHostID %s, ParseUint err: %w", nhid, err)
+	}
+	return id, nil
+}
+

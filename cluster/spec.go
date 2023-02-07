@@ -24,27 +24,41 @@ func ReconcileSubShardChangingEvents(cm Manager) ([]*ShardSpecChangingEvent, err
 	return events, nil
 }
 
+type ShardSpecDiffView struct {
+	Spec *master_shard.ShardSpec
+	Nodes map[uint64]string
+	Initials map[uint64]string
+}
+type ShardStatusDiffView struct {
+	Status dragonboat.ClusterInfo
+	Nodes map[uint64]string
+}
+
 func DiffSubShards(addr string, spec []*master_shard.ShardSpec, status []dragonboat.ClusterInfo, persist []raftio.NodeInfo) []*ShardSpecChangingEvent {
-	specDict := lo.SliceToMap(spec, func(s *master_shard.ShardSpec) (uint64, map[uint64]string) {
-		return s.ShardId, lo.MapEntries(s.Nodes, func(nhid string, node *master_shard.Node) (uint64, string) {
-			return node.NodeId, node.Addr
-		})
+	specDict := lo.SliceToMap(spec, func(s *master_shard.ShardSpec) (uint64, *ShardSpecDiffView) {
+		return s.ShardId, &ShardSpecDiffView{
+			Spec: s,
+			Nodes: lo.MapEntries(s.Nodes, func(nhid string, node *master_shard.Node) (uint64, string) {
+				return node.NodeId, node.Addr
+			}),
+			Initials: lo.MapEntries(s.Initials, func(nhid string, node *master_shard.Node) (uint64, string) {
+				return node.NodeId, node.Addr
+			}),
+		}
 	})
-	initialDict := lo.SliceToMap(spec, func(s *master_shard.ShardSpec) (uint64, map[uint64]string) {
-		return s.ShardId, lo.MapEntries(s.Initials, func(nhid string, node *master_shard.Node) (uint64, string) {
-			return node.NodeId, node.Addr
-		})
-	})
-	statusDict := lo.SliceToMap(status, func(ci dragonboat.ClusterInfo) (uint64, map[uint64]string) {
-		return ci.ClusterID, ci.Nodes
+	statusDict := lo.SliceToMap(status, func(ci dragonboat.ClusterInfo) (uint64, *ShardStatusDiffView) {
+		return ci.ClusterID, &ShardStatusDiffView{
+			Status: ci,
+			Nodes: ci.Nodes,
+		}
 	})
 	persistDict := lo.SliceToMap(persist, func(ni raftio.NodeInfo) (uint64, uint64) {
 		return ni.ClusterID, ni.NodeID
 	})
-	specKeys := lo.MapToSlice(specDict, func(sid uint64, _ map[uint64]string) uint64 {
+	specKeys := lo.MapToSlice(specDict, func(sid uint64, _ *ShardSpecDiffView) uint64 {
 		return sid
 	})
-	statusKeys := lo.MapToSlice(statusDict, func(sid uint64, _ map[uint64]string) uint64 {
+	statusKeys := lo.MapToSlice(statusDict, func(sid uint64, _ *ShardStatusDiffView) uint64 {
 		return sid
 	})
 	persistKeys := lo.MapToSlice(persistDict, func(sid uint64, _ uint64) uint64 {
@@ -55,24 +69,26 @@ func DiffSubShards(addr string, spec []*master_shard.ShardSpec, status []dragonb
 		if sid == MasterShardID {
 			return nil, false
 		}
-		specNode, specOK := specDict[sid]
-		initialNode, initialOK := initialDict[sid]
-		statusNode, statusOK := statusDict[sid]
+		specView, specOK := specDict[sid]
+		statusView, statusOK := statusDict[sid]
 		persistNodeID, persistOK := persistDict[sid]
-		specNodeID, specNodeOK := lo.FindKey(specNode, addr)
-		statusNodeID, statusNodeOK := lo.FindKey(statusNode, addr)
-		event := &ShardSpecChangingEvent{ShardId: sid, PreviousNodes: statusNode, CurrentNodes: specNode}
+		event := &ShardSpecChangingEvent{ShardId: sid}
+		if specOK {
+			event.CurrentNodes = specView.Nodes
+			event.ProfileName = &specView.Spec.ProfileName
+		}
+		if statusOK {
+			event.PreviousNodes = statusView.Nodes
+		}
+
 		if specOK && !statusOK {
+			specNodeID, specNodeOK := lo.FindKey(specView.Nodes, addr)
 			if specNodeOK && persistOK {
 				event.Type = ShardSpecChangingType_Recovering
 				event.PreviousNodeId = &persistNodeID
 				return utils.ToSlice(event), true
 			} else if specNodeOK && !persistOK {
-				if !initialOK {
-					log.Println("[WARN] diffSubShards impossible cause: specOK but !initialOK")
-					return nil, false
-				}
-				if _, ok := initialNode[specNodeID]; ok {
+				if _, ok := specView.Initials[specNodeID]; ok {
 					event.Type = ShardSpecChangingType_Adding
 					event.CurrentNodeId = &specNodeID
 					return utils.ToSlice(event), true
@@ -88,6 +104,7 @@ func DiffSubShards(addr string, spec []*master_shard.ShardSpec, status []dragonb
 			}
 			return nil, false
 		} else if !specOK && statusOK {
+			statusNodeID, statusNodeOK := lo.FindKey(statusView.Nodes, addr)
 			if !statusNodeOK {
 				log.Println("[WARN] diffSubShards impossible cause: !specOK && statusOK !statusNodeOK")
 				return nil, false
@@ -96,6 +113,8 @@ func DiffSubShards(addr string, spec []*master_shard.ShardSpec, status []dragonb
 			event.PreviousNodeId = &statusNodeID
 			return utils.ToSlice(event), true
 		} else if specOK && statusOK {
+			statusNodeID, statusNodeOK := lo.FindKey(statusView.Nodes, addr)
+			specNodeID, specNodeOK := lo.FindKey(specView.Nodes, addr)
 			if !statusNodeOK {
 				log.Println("[WARN] diffSubShards impossible cause: specOK && statusOK but !statusNodeOK")
 				return nil, false
@@ -106,7 +125,7 @@ func DiffSubShards(addr string, spec []*master_shard.ShardSpec, status []dragonb
 				return utils.ToSlice(event), true
 			} else {
 				// join or leave other nodes
-				events := DiffNodes(specNode, statusNode, event)
+				events := DiffNodes(specView.Nodes, statusView.Nodes, event)
 				return events, true
 			}
 		} else if persistOK {

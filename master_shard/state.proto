@@ -2,6 +2,12 @@ syntax = "proto3";
 package master_shard;
 option go_package = "github.com/LilithGames/moxa/master_shard";
 
+enum ShardSpecIndex {
+  ShardID = 0;
+  LabelKey = 1;
+  LabelKeyValue = 2;
+}
+
 message Node {
   string node_host_id = 1;
   uint64 node_id = 2;
@@ -19,10 +25,33 @@ message ShardSpec {
   uint64 state_version = 1;
   string shard_name = 2;
   uint64 shard_id = 3;
-  int32 replica = 4;
-  map<string, Node> initials = 5;
-  map<string, Node> nodes = 6;
-  uint64 last_node_id = 7;
+  string profile_name = 4;
+  int32 replica = 5;
+  map<string, Node> initials = 6;
+  map<string, Node> nodes = 7;
+  uint64 last_node_id = 8;
+  map<string, string> labels = 9;
+}
+
+message IndexData {
+  string Index = 1;
+  repeated string Keys = 2;
+}
+message IndexMeta {
+  string Key = 1;
+  repeated string Indices = 2;
+}
+message Indices {
+  map<string, IndexData> indices = 1;
+  map<string, IndexMeta> meta = 2;
+  uint64 indexer_version = 3;
+}
+
+message GroupSpec {
+  uint64 state_version = 1;
+  string group_name = 2;
+  int32  size = 3;
+  string profile_name = 4;
 }
 
 message StateRoot {
@@ -31,8 +60,12 @@ message StateRoot {
   uint64 last_shard_id = 2;
   // shardname-shardspec
   map<string, ShardSpec> shards = 3;
+  Indices shard_indices = 4;
 
   // nhid-nodespec
-  uint64 nodes_version = 4;
-  map<string, NodeSpec> nodes = 5;
+  uint64 nodes_version = 10;
+  map<string, NodeSpec> nodes = 11;
+
+  uint64 groups_version = 20;
+  map<string, GroupSpec> groups = 21;
 }

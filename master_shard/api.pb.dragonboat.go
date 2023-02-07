@@ -22,6 +22,11 @@ type IMasterShardDragonboatServer interface {
 	DeleteShard(req *DeleteShardRequest) (*DeleteShardResponse, error)
 	GetNode(req *GetNodeRequest) (*GetNodeResponse, error)
 	UpdateNode(req *UpdateNodeRequest) (*UpdateNodeResponse, error)
+	CreateGroup(req *CreateGroupRequest) (*CreateGroupResponse, error)
+	UpdateGroup(req *UpdateGroupRequest) (*UpdateGroupResponse, error)
+	DeleteGroup(req *DeleteGroupRequest) (*DeleteGroupResponse, error)
+	GetGroup(req *GetGroupRequest) (*GetGroupResponse, error)
+	ListGroup(req *ListGroupRequest) (*ListGroupResponse, error)
 }
 
 type IMasterShardDragonboatClient interface {
@@ -34,6 +39,11 @@ type IMasterShardDragonboatClient interface {
 	DeleteShard(ctx context.Context, req *DeleteShardRequest, opts ...runtime.DragonboatClientOption) (*DeleteShardResponse, error)
 	GetNode(ctx context.Context, req *GetNodeRequest, opts ...runtime.DragonboatClientOption) (*GetNodeResponse, error)
 	UpdateNode(ctx context.Context, req *UpdateNodeRequest, opts ...runtime.DragonboatClientOption) (*UpdateNodeResponse, error)
+	CreateGroup(ctx context.Context, req *CreateGroupRequest, opts ...runtime.DragonboatClientOption) (*CreateGroupResponse, error)
+	UpdateGroup(ctx context.Context, req *UpdateGroupRequest, opts ...runtime.DragonboatClientOption) (*UpdateGroupResponse, error)
+	DeleteGroup(ctx context.Context, req *DeleteGroupRequest, opts ...runtime.DragonboatClientOption) (*DeleteGroupResponse, error)
+	GetGroup(ctx context.Context, req *GetGroupRequest, opts ...runtime.DragonboatClientOption) (*GetGroupResponse, error)
+	ListGroup(ctx context.Context, req *ListGroupRequest, opts ...runtime.DragonboatClientOption) (*ListGroupResponse, error)
 }
 
 func DragonboatMasterShardLookup(s IMasterShardDragonboatServer, query interface{}) (result interface{}, err error) {
@@ -73,6 +83,18 @@ func DragonboatMasterShardLookup(s IMasterShardDragonboatServer, query interface
 			return resp, fmt.Errorf("IMasterShardServer.GetNode(%v) err: %w", q, err)
 		}
 		return resp, nil
+	case *GetGroupRequest:
+		resp, err := s.GetGroup(q)
+		if err != nil {
+			return resp, fmt.Errorf("IMasterShardServer.GetGroup(%v) err: %w", q, err)
+		}
+		return resp, nil
+	case *ListGroupRequest:
+		resp, err := s.ListGroup(q)
+		if err != nil {
+			return resp, fmt.Errorf("IMasterShardServer.ListGroup(%v) err: %w", q, err)
+		}
+		return resp, nil
 	case *runtime.DragonboatVoid:
 		// healthcheck
 		return &runtime.DragonboatVoid{}, nil
@@ -99,6 +121,15 @@ func DragonboatMasterShardUpdateDispatch(s IMasterShardDragonboatServer, msg pro
 		return resp, err
 	case *UpdateNodeRequest:
 		resp, err := s.UpdateNode(m)
+		return resp, err
+	case *CreateGroupRequest:
+		resp, err := s.CreateGroup(m)
+		return resp, err
+	case *UpdateGroupRequest:
+		resp, err := s.UpdateGroup(m)
+		return resp, err
+	case *DeleteGroupRequest:
+		resp, err := s.DeleteGroup(m)
 		return resp, err
 	case *runtime.DragonboatVoid:
 		// dummy update increate index
@@ -173,4 +204,24 @@ func (it *MasterShardDragonboatClient) GetNode(ctx context.Context, req *GetNode
 func (it *MasterShardDragonboatClient) UpdateNode(ctx context.Context, req *UpdateNodeRequest, opts ...runtime.DragonboatClientOption) (*UpdateNodeResponse, error) {
 	resp, err := it.client.Mutate(ctx, req, opts...)
 	return runtime.ClientResponseConversion[*UpdateNodeResponse](resp, err)
+}
+func (it *MasterShardDragonboatClient) CreateGroup(ctx context.Context, req *CreateGroupRequest, opts ...runtime.DragonboatClientOption) (*CreateGroupResponse, error) {
+	resp, err := it.client.Mutate(ctx, req, opts...)
+	return runtime.ClientResponseConversion[*CreateGroupResponse](resp, err)
+}
+func (it *MasterShardDragonboatClient) UpdateGroup(ctx context.Context, req *UpdateGroupRequest, opts ...runtime.DragonboatClientOption) (*UpdateGroupResponse, error) {
+	resp, err := it.client.Mutate(ctx, req, opts...)
+	return runtime.ClientResponseConversion[*UpdateGroupResponse](resp, err)
+}
+func (it *MasterShardDragonboatClient) DeleteGroup(ctx context.Context, req *DeleteGroupRequest, opts ...runtime.DragonboatClientOption) (*DeleteGroupResponse, error) {
+	resp, err := it.client.Mutate(ctx, req, opts...)
+	return runtime.ClientResponseConversion[*DeleteGroupResponse](resp, err)
+}
+func (it *MasterShardDragonboatClient) GetGroup(ctx context.Context, req *GetGroupRequest, opts ...runtime.DragonboatClientOption) (*GetGroupResponse, error) {
+	resp, err := it.client.Query(ctx, req, opts...)
+	return runtime.ClientResponseConversion[*GetGroupResponse](resp, err)
+}
+func (it *MasterShardDragonboatClient) ListGroup(ctx context.Context, req *ListGroupRequest, opts ...runtime.DragonboatClientOption) (*ListGroupResponse, error) {
+	resp, err := it.client.Query(ctx, req, opts...)
+	return runtime.ClientResponseConversion[*ListGroupResponse](resp, err)
 }

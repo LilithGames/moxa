@@ -5,17 +5,20 @@ go 1.19
 require (
 	github.com/LilithGames/go-event-bus/v4 v4.1.0
 	github.com/LilithGames/protoc-gen-dragonboat v0.1.9
+	github.com/antonmedv/expr v1.12.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.0.0-00010101000000-000000000000
 	github.com/hashicorp/go-multierror v1.0.0
 	github.com/hashicorp/logutils v1.0.0
 	github.com/hashicorp/memberlist v0.5.0
+	github.com/jedib0t/go-pretty/v6 v6.4.4
 	github.com/lni/dragonboat/v3 v3.3.6
 	github.com/lni/goutils v1.3.0
 	github.com/puzpuzpuz/xsync v1.5.2
 	github.com/samber/lo v1.33.0
 	github.com/serialx/hashring v0.0.0-20200727003509-22c0c7ab6b1b
 	github.com/stretchr/testify v1.8.0
+	github.com/urfave/cli/v2 v2.23.7
 	google.golang.org/genproto v0.0.0-20221014213838-99cd37c6964a
 	google.golang.org/grpc v1.50.1
 	google.golang.org/protobuf v1.28.1
@@ -40,16 +43,16 @@ require (
 	github.com/hashicorp/go-msgpack v0.5.3 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.0 // indirect
-	github.com/jedib0t/go-pretty/v6 v6.4.4 // indirect
 	github.com/juju/ratelimit v1.0.2-0.20191002062651-f60b32039441 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/miekg/dns v1.1.26 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
-	github.com/urfave/cli/v2 v2.23.7 // indirect
 	github.com/valyala/fastrand v1.0.0 // indirect
 	github.com/valyala/histogram v1.0.1 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect

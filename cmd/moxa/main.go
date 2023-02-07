@@ -59,7 +59,7 @@ func main() {
 		NodeHostDir:     "/data/nodehost",
 		LocalStorageDir: "/data/storage",
 		MemberSeed:      []string{"moxa-headless:7946"},
-		RttMillisecond:  1,
+		RttMillisecond:  100,
 		DeploymentId:    0,
 		EnableMetrics:   false,
 	}
@@ -67,7 +67,8 @@ func main() {
 		HttpPort: 8000,
 		GrpcPort: 8001,
 	}
-	master := &moxa.ShardProfiler{
+	master := &moxa.ShardProfile{
+		Name: moxa.MasterProfileName,
 		CreateFn: runtime.NewMigrationStateMachineWrapper(master_shard.NewStateMachine),
 		Config: config.Config{
 			CheckQuorum:         true,
@@ -79,7 +80,9 @@ func main() {
 		},
 		Version: masterShardVersion,
 	}
-	sub := &moxa.ShardProfiler{
+	subProfileName := "SubProfile"
+	sub := &moxa.ShardProfile{
+		Name: subProfileName,
 		CreateFn: runtime.NewMigrationStateMachineWrapper(sub_shard.NewExampleStateMachine),
 		Config: config.Config{
 			CheckQuorum:         true,
@@ -149,7 +152,7 @@ func main() {
 			cluster.ShardSpecChangingWorker(cm),
 			cluster.MigrationChangedWorker(cm),
 			moxa.ShardSpecMembershipWorker(cm, sm),
-			moxa.ShardSpecFixedSizeCreationWorker(cm, 1),
+			moxa.ShardSpecFixedSizeCreationWorker(cm, subProfileName, 1),
 			moxa.MigrationNodeWorker(cm, sm),
 		); err != nil {
 			log.Println("[ERROR]", fmt.Errorf("StartClusterWorker err: %w", err))
