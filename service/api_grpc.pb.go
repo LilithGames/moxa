@@ -29,6 +29,8 @@ type NodeHostClient interface {
 	ListNode(ctx context.Context, in *ShardListNodeRequest, opts ...grpc.CallOption) (*ShardListNodeResponse, error)
 	TransferLeader(ctx context.Context, in *ShardTransferLeaderRequest, opts ...grpc.CallOption) (*ShardTransferLeaderResponse, error)
 	CreateSnapshot(ctx context.Context, in *CreateSnapshotRequest, opts ...grpc.CallOption) (*CreateSnapshotResponse, error)
+	ListMemberState(ctx context.Context, in *ListMemberStateRequest, opts ...grpc.CallOption) (*ListMemberStateResponse, error)
+	SubscribeMemberState(ctx context.Context, in *SubscribeMemberStateRequest, opts ...grpc.CallOption) (NodeHost_SubscribeMemberStateClient, error)
 }
 
 type nodeHostClient struct {
@@ -138,6 +140,47 @@ func (c *nodeHostClient) CreateSnapshot(ctx context.Context, in *CreateSnapshotR
 	return out, nil
 }
 
+func (c *nodeHostClient) ListMemberState(ctx context.Context, in *ListMemberStateRequest, opts ...grpc.CallOption) (*ListMemberStateResponse, error) {
+	out := new(ListMemberStateResponse)
+	err := c.cc.Invoke(ctx, "/service.NodeHost/ListMemberState", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeHostClient) SubscribeMemberState(ctx context.Context, in *SubscribeMemberStateRequest, opts ...grpc.CallOption) (NodeHost_SubscribeMemberStateClient, error) {
+	stream, err := c.cc.NewStream(ctx, &NodeHost_ServiceDesc.Streams[0], "/service.NodeHost/SubscribeMemberState", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &nodeHostSubscribeMemberStateClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type NodeHost_SubscribeMemberStateClient interface {
+	Recv() (*SubscribeMemberStateResponse, error)
+	grpc.ClientStream
+}
+
+type nodeHostSubscribeMemberStateClient struct {
+	grpc.ClientStream
+}
+
+func (x *nodeHostSubscribeMemberStateClient) Recv() (*SubscribeMemberStateResponse, error) {
+	m := new(SubscribeMemberStateResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // NodeHostServer is the server API for NodeHost service.
 // All implementations must embed UnimplementedNodeHostServer
 // for forward compatibility
@@ -153,6 +196,8 @@ type NodeHostServer interface {
 	ListNode(context.Context, *ShardListNodeRequest) (*ShardListNodeResponse, error)
 	TransferLeader(context.Context, *ShardTransferLeaderRequest) (*ShardTransferLeaderResponse, error)
 	CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotResponse, error)
+	ListMemberState(context.Context, *ListMemberStateRequest) (*ListMemberStateResponse, error)
+	SubscribeMemberState(*SubscribeMemberStateRequest, NodeHost_SubscribeMemberStateServer) error
 	mustEmbedUnimplementedNodeHostServer()
 }
 
@@ -192,6 +237,12 @@ func (UnimplementedNodeHostServer) TransferLeader(context.Context, *ShardTransfe
 }
 func (UnimplementedNodeHostServer) CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateSnapshot not implemented")
+}
+func (UnimplementedNodeHostServer) ListMemberState(context.Context, *ListMemberStateRequest) (*ListMemberStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMemberState not implemented")
+}
+func (UnimplementedNodeHostServer) SubscribeMemberState(*SubscribeMemberStateRequest, NodeHost_SubscribeMemberStateServer) error {
+	return status.Errorf(codes.Unimplemented, "method SubscribeMemberState not implemented")
 }
 func (UnimplementedNodeHostServer) mustEmbedUnimplementedNodeHostServer() {}
 
@@ -404,6 +455,45 @@ func _NodeHost_CreateSnapshot_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeHost_ListMemberState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMemberStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeHostServer).ListMemberState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/service.NodeHost/ListMemberState",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeHostServer).ListMemberState(ctx, req.(*ListMemberStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeHost_SubscribeMemberState_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SubscribeMemberStateRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(NodeHostServer).SubscribeMemberState(m, &nodeHostSubscribeMemberStateServer{stream})
+}
+
+type NodeHost_SubscribeMemberStateServer interface {
+	Send(*SubscribeMemberStateResponse) error
+	grpc.ServerStream
+}
+
+type nodeHostSubscribeMemberStateServer struct {
+	grpc.ServerStream
+}
+
+func (x *nodeHostSubscribeMemberStateServer) Send(m *SubscribeMemberStateResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // NodeHost_ServiceDesc is the grpc.ServiceDesc for NodeHost service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -455,8 +545,18 @@ var NodeHost_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "CreateSnapshot",
 			Handler:    _NodeHost_CreateSnapshot_Handler,
 		},
+		{
+			MethodName: "ListMemberState",
+			Handler:    _NodeHost_ListMemberState_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SubscribeMemberState",
+			Handler:       _NodeHost_SubscribeMemberState_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "service/api.proto",
 }
 

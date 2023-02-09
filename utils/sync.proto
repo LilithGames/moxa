@@ -1,0 +1,9 @@
+syntax = "proto3";
+package utils;
+option go_package = "github.com/LilithGames/moxa/utils";
+
+enum SyncStateType {
+  Add = 0;
+  Update = 1;
+  Remove = 2;
+}

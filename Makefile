@@ -13,6 +13,7 @@ proto:
 	@protoc -I. -Iproto --go_out=paths=source_relative:. ./cluster/snapshot.proto
 	@protoc -I. -Iproto --go_out=paths=source_relative:. ./cluster/config.proto
 	@protoc -I. -Iproto --go_out=paths=source_relative:. ./service/config.proto
+	@protoc -I. -Iproto --go_out=paths=source_relative:. ./utils/sync.proto
 	@protoc -I. -Iproto --go_out=paths=source_relative:. --go-grpc_out=paths=source_relative:. ./service/api.proto
 	@protoc -I. -Iproto --grpc-gateway_out=. --grpc-gateway_opt=logtostderr=true --grpc-gateway_opt=paths=source_relative --grpc-gateway_opt=generate_unbound_methods=true ./service/api.proto
 	@protoc -I. -Iproto --go_out=paths=source_relative:. --dragonboat_out=paths=source_relative:. ./sub_shard/api.proto
@@ -43,6 +44,10 @@ build-base-mage: build-linux
 build: proto
 	@go build -o bin/ github.com/LilithGames/moxa/cmd/...
 
+.PHONY: test
+test:
+	@go test -count=3 github.com/LilithGames/moxa/...
+
 .PHONY: run
 run: build-base-mage
 	@docker run -it --rm --entrypoint=bash $$($(KO) build -B github.com/LilithGames/moxa/cmd/moxa)
@@ -62,3 +67,4 @@ clean:
 .PHONY: deploy
 deploy: install
 	@kubectl rollout status statefulset.apps/moxa -n temp
+

@@ -4,6 +4,8 @@ option go_package = "github.com/LilithGames/moxa/service";
 
 import "google/api/annotations.proto";
 import "master_shard/state.proto";
+import "cluster/member.proto";
+import "utils/sync.proto";
 
 message StringMessage {
   int32 id = 1;
@@ -130,6 +132,22 @@ message SyncRemoveNodeResponse {
   uint64 updated = 1;
 }
 
+message ListMemberStateRequest {
+}
+message ListMemberStateResponse {
+  repeated cluster.MemberState members = 1;
+  uint64 version = 2;
+}
+message SubscribeMemberStateRequest {
+  uint64 version = 1;
+}
+
+message SubscribeMemberStateResponse {
+  cluster.MemberState state = 1;
+  uint64 version = 2;
+  utils.SyncStateType type = 3;
+}
+
 service NodeHost {
   rpc Info(NodeHostInfoRequest) returns (NodeHostInfoResponse) {
     option (google.api.http) = {
@@ -184,6 +202,16 @@ service NodeHost {
   rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse) {
     option (google.api.http) = {
       get: "/shard/{shard_id}/snapshot/create"
+    };
+  }
+  rpc ListMemberState(ListMemberStateRequest) returns (ListMemberStateResponse) {
+    option (google.api.http) = {
+      get: "/member/state/list",
+    };
+  }
+  rpc SubscribeMemberState(SubscribeMemberStateRequest) returns (stream SubscribeMemberStateResponse) {
+    option (google.api.http) = {
+      get: "/member/state/subscribe",
     };
   }
 }
@@ -410,3 +438,4 @@ service Spec {
     };
   }
 }
+

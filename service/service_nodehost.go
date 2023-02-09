@@ -255,13 +255,39 @@ func (it *NodeHostService) CreateSnapshot(ctx context.Context, req *CreateSnapsh
 	index, err := it.cm.NodeHost().SyncRequestSnapshot(ctx, req.ShardId, opt)
 	if err != nil {
 		if errors.Is(err, dragonboat.ErrRejected) {
-			return nil, status.Errorf(codes.AlreadyExists, "SyncRequestSnapshot(%d) err: %v", err)
+			return nil, status.Errorf(codes.AlreadyExists, "SyncRequestSnapshot(%d) err: %v", req.ShardId, err)
 		} else if errors.Is(err, dragonboat.ErrSystemBusy) {
-			return nil, status.Errorf(codes.Unavailable, "SyncRequestSnapshot(%d) err: %v", err)
+			return nil, status.Errorf(codes.Unavailable, "SyncRequestSnapshot(%d) err: %v", req.ShardId, err)
 		}
-		return nil, status.Errorf(codes.Internal, "SyncRequestSnapshot(%d) err: %v", err)
+		return nil, status.Errorf(codes.Internal, "SyncRequestSnapshot(%d) err: %v", req.ShardId, err)
 	}
 	return &CreateSnapshotResponse{SnapshotIndex: index}, nil
+}
+
+func (it *NodeHostService) ListMemberState(ctx context.Context, req *ListMemberStateRequest) (*ListMemberStateResponse, error) {
+	state, version := it.cm.Members().GetMemberStateList()
+	return &ListMemberStateResponse{Members: lo.Values(state), Version: version}, nil
+}
+func (it *NodeHostService) SubscribeMemberState(req *SubscribeMemberStateRequest, svr NodeHost_SubscribeMemberStateServer) error {
+	stream, done := it.cm.Members().ChangesSince(req.Version)
+	for {
+		select {
+		case ss, ok := <-stream:
+			if !ok {
+				return fmt.Errorf("stream eof")
+			}
+			if ss.Error != nil {
+				return fmt.Errorf("stream err: %w", ss.Error)
+			}
+			change := ss.Item
+			if err := svr.Send(&SubscribeMemberStateResponse{State: change.Item, Type: change.Type, Version: change.Version}); err != nil {
+				return fmt.Errorf("svr.Send() err: %w", err)
+			}
+		case <-svr.Context().Done():
+			close(done)
+			return nil
+		}
+	}
 }
 
 func (it *NodeHostService) getMember(nhIndex int32) *cluster.MemberMeta {

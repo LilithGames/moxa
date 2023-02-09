@@ -26,7 +26,7 @@ type Client struct {
 }
 
 func NewClient(cm cluster.Manager, target string) (IClient, error) {
-	builder := NewServiceResolverBuilder(cm)
+	builder := NewServiceResolverBuilder(cm.Members())
 
 	retry_opts := []grpc_retry.CallOption{
 		grpc_retry.WithMax(3),

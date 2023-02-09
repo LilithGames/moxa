@@ -149,7 +149,7 @@ func actionPrepareMigration(cCtx *cli.Context) error {
 		if _, err := client.Spec().CreateMigration(context.TODO(), &service.CreateMigrationRequest{ShardId: shardID}); err != nil {
 			return fmt.Errorf("client.Spec().CreateMigration err: %w", err)
 		}
-		fmt.Printf("migration %d prepared\n")
+		fmt.Printf("migration %d prepared\n", shardID)
 		return nil
 	}
 	return cli.Exit("shard_id or all required", 1)

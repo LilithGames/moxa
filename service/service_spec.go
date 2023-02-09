@@ -292,7 +292,7 @@ func (it *SpecService) GetNodeSpec(ctx context.Context, req *GetNodeSpecRequest)
 
 	resp, err := it.cm.Client().MasterShard().GetNode(ctx, &master_shard.GetNodeRequest{NodeHostId: nhid})
 	if err != nil {
-		return &GetNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().GetNode(%s) err: %w", req.NodeHostId, err))
+		return &GetNodeSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("client.MasterShard().GetNode(%s) err: %w", nhid, err))
 	}
 	return &GetNodeSpecResponse{Node: resp.Node}, nil
 }

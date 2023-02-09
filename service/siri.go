@@ -128,3 +128,4 @@ func WithNopIndex[T any, R any](f func(T) R) func(T, int) R {
 		return f(t)
 	}
 }
+

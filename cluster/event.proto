@@ -16,6 +16,8 @@ enum EventTopic {
   MigrationCancellingNotify = 3000;
   MigrationRepairingNotify = 3001;
   MigrationChanged = 3002;
+
+  MemberStateChanged = 4000;
 }
 
 message NodeHostNodeReadyEvent {
@@ -73,4 +75,8 @@ message MigrationRepairingNotifyEvent {
 message MigrationChangedEvent {
   uint64 shard_id = 1;
   uint64 state_index = 2;
+}
+message MemberStateChangedEvent {
+  uint64 version = 1;
+  string node_host_id = 2;
 }

@@ -28,8 +28,9 @@ message MemberShard {
 
 message MemberState {
   string node_host_id = 1;
-  map<uint64,MemberShard> shards = 2;
-  map<uint64,uint64> log_shards = 3;
+  MemberMeta meta = 2;
+  map<uint64,MemberShard> shards = 3;
+  map<uint64,uint64> log_shards = 4;
 }
 
 message MemberNotify {
@@ -39,4 +40,5 @@ message MemberNotify {
 
 message MemberGlobalState {
   map<string, MemberState> members = 1;
+  uint64 version = 2;
 }

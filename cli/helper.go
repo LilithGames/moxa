@@ -13,15 +13,18 @@ import (
 type IHelper interface {
 	MustClient() service.IClient
 	Ctx() context.Context
+	Cancel() 
 }
 
 type Helper struct {
 	cctx *cli.Context
 	ctx  context.Context
+	cancel context.CancelFunc
 }
 
 func NewHelper(cCtx *cli.Context) IHelper {
-	return &Helper{cCtx, context.TODO()}
+	ctx, cancel := context.WithCancel(context.TODO())
+	return &Helper{cCtx, ctx, cancel}
 }
 
 func (it *Helper) MustClient() service.IClient {
@@ -35,4 +38,8 @@ func (it *Helper) MustClient() service.IClient {
 
 func (it *Helper) Ctx() context.Context {
 	return it.ctx
+}
+
+func (it *Helper) Cancel() {
+	it.cancel()
 }

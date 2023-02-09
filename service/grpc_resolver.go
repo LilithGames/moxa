@@ -6,20 +6,27 @@ import (
 	"net"
 	"reflect"
 	"time"
+	"context"
 
 	"github.com/lni/goutils/syncutil"
 	"google.golang.org/grpc/attributes"
 	"google.golang.org/grpc/resolver"
+	"github.com/hashicorp/go-multierror"
 
 	"github.com/LilithGames/moxa/cluster"
 )
 
-type serviceResolverBuilder struct {
-	cm cluster.Manager
+type IMemberStateReader interface {
+	GetMemberStateList() (map[string]*cluster.MemberState, uint64)
+	GetMemberStateVersion() uint64
 }
 
-func NewServiceResolverBuilder(cm cluster.Manager) resolver.Builder {
-	return &serviceResolverBuilder{cm: cm}
+type serviceResolverBuilder struct {
+	reader IMemberStateReader
+}
+
+func NewServiceResolverBuilder(reader IMemberStateReader) resolver.Builder {
+	return &serviceResolverBuilder{reader: reader}
 }
 
 func (it *serviceResolverBuilder) Scheme() string {
@@ -30,23 +37,24 @@ func (it *serviceResolverBuilder) Build(target resolver.Target, cc resolver.Clie
 	if target.URL.Port() == "" {
 		return nil, fmt.Errorf("invalid resolver target(%s): port required", target.URL.String())
 	}
-	resolver := NewServiceResolver(target, cc, it.cm)
+	resolver := NewServiceResolver(target, cc, it.reader)
 	return resolver, nil
 }
 
 type serviceResolver struct {
 	conn    resolver.ClientConn
-	cm      cluster.Manager
+	reader IMemberStateReader
+	version uint64
 	target  resolver.Target
 	stopper *syncutil.Stopper
 	trigger chan struct{}
 }
 
-func NewServiceResolver(target resolver.Target, conn resolver.ClientConn, cm cluster.Manager) *serviceResolver {
+func NewServiceResolver(target resolver.Target, conn resolver.ClientConn, reader IMemberStateReader) *serviceResolver {
 	it := &serviceResolver{
 		conn:    conn,
 		target:  target,
-		cm:      cm,
+		reader:  reader,
 		stopper: syncutil.NewStopper(),
 		trigger: make(chan struct{}, 1),
 	}
@@ -82,25 +90,54 @@ func (it *ResolverMeta) Equal(v interface{}) bool {
 	return reflect.DeepEqual(it.ShardIDs, o.ShardIDs)
 }
 
-func (it *serviceResolver) resolve() (*resolver.State, error) {
-	addrs := make([]resolver.Address, 0, it.cm.Members().Nums())
-	it.cm.Members().Foreach(func(m cluster.MemberNode) bool {
-		shardIDs := map[uint64]bool{}
-		if m.State != nil {
-			for shardID, shard := range m.State.Shards {
-				shardIDs[shardID] = shard.IsLeader
+func makeResolveMeta(m *cluster.MemberState) *ResolverMeta {
+	shardIDs := map[uint64]bool{}
+	for shardID, shard := range m.Shards {
+		shardIDs[shardID] = shard.IsLeader
+	}
+	return &ResolverMeta{ShardIDs: shardIDs}
+}
+
+func resolveRaftAddress(raftAddress string) (string, error) {
+	host, _, err := net.SplitHostPort(raftAddress)
+	if err != nil {
+		return "", fmt.Errorf("net.SplitHostPort(%s) err: %w", raftAddress, err)
+	}
+	ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip4", host)
+	if err != nil {
+		return "", fmt.Errorf("net.DefaultResolver.LookupIP(%s) err: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return "", fmt.Errorf("resolve result empty")
+	}
+	ip := ips[0]
+	return ip.String(), nil
+}
+
+func (it *serviceResolver) resolve() error {
+	var errs error
+	if it.version == 0 || it.version != it.reader.GetMemberStateVersion() {
+		memberState, version := it.reader.GetMemberStateList()
+		addrs := make([]resolver.Address, 0, len(memberState))
+		for _, m := range memberState {
+			ip, err := resolveRaftAddress(m.Meta.RaftAddress)
+			if err != nil {
+				errs = multierror.Append(errs, fmt.Errorf("resolveRaftAddress err: %w", err))
+				continue
 			}
+			addr := resolver.Address{
+				Addr:       fmt.Sprintf("%s:%s", ip, it.target.URL.Port()),
+				ServerName: m.NodeHostId,
+				Attributes: attributes.New("meta", makeResolveMeta(m)),
+			}
+			addrs = append(addrs, addr)
+			it.conn.UpdateState(resolver.State{Addresses: addrs})
 		}
-		addr := resolver.Address{
-			Addr:       fmt.Sprintf("%s:%s", m.Node.Addr.String(), it.target.URL.Port()),
-			ServerName: m.Node.Name,
-			Attributes: attributes.New("meta", &ResolverMeta{ShardIDs: shardIDs}),
+		if errs == nil {
+			it.version = version
 		}
-		// log.Println("[INFO]", fmt.Sprintf("resolve: %s %v", addr.Addr, shardIDs))
-		addrs = append(addrs, addr)
-		return true
-	})
-	return &resolver.State{Addresses: addrs}, nil
+	}
+	return errs
 }
 
 func (it *serviceResolver) watcher() {
@@ -108,12 +145,11 @@ func (it *serviceResolver) watcher() {
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
 	for {
-		state, err := it.resolve()
+		err := it.resolve()
 		if err != nil {
 			log.Println("[WARN]", fmt.Errorf("serviceResolver.watcher resolve err: %w", err))
 			interval = time.Second
 		} else {
-			it.conn.UpdateState(*state)
 			interval = time.Second * 3
 		}
 

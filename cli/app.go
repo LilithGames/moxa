@@ -12,5 +12,5 @@ var App = &cli.App{
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "address", Aliases: []string{"addr"}, Value: "127.0.0.1:8001", Usage: "server address"},
 	},
-	Commands: []*cli.Command{cmdShard, cmdMigration, cmdNode},
+	Commands: []*cli.Command{cmdShard, cmdMigration, cmdNode, cmdDebug},
 }

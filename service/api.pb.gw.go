@@ -643,6 +643,52 @@ func local_request_NodeHost_CreateSnapshot_0(ctx context.Context, marshaler runt
 
 }
 
+func request_NodeHost_ListMemberState_0(ctx context.Context, marshaler runtime.Marshaler, client NodeHostClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq ListMemberStateRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := client.ListMemberState(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func local_request_NodeHost_ListMemberState_0(ctx context.Context, marshaler runtime.Marshaler, server NodeHostServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq ListMemberStateRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := server.ListMemberState(ctx, &protoReq)
+	return msg, metadata, err
+
+}
+
+var (
+	filter_NodeHost_SubscribeMemberState_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
+)
+
+func request_NodeHost_SubscribeMemberState_0(ctx context.Context, marshaler runtime.Marshaler, client NodeHostClient, req *http.Request, pathParams map[string]string) (NodeHost_SubscribeMemberStateClient, runtime.ServerMetadata, error) {
+	var protoReq SubscribeMemberStateRequest
+	var metadata runtime.ServerMetadata
+
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_NodeHost_SubscribeMemberState_0); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+
+	stream, err := client.SubscribeMemberState(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+
+}
+
 var (
 	filter_Spec_AddShardSpec_0 = &utilities.DoubleArray{Encoding: map[string]int{"shard_name": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
 )
@@ -1506,6 +1552,38 @@ func RegisterNodeHostHandlerServer(ctx context.Context, mux *runtime.ServeMux, s
 
 	})
 
+	mux.Handle("GET", pattern_NodeHost_ListMemberState_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = runtime.AnnotateIncomingContext(ctx, mux, req, "/service.NodeHost/ListMemberState", runtime.WithHTTPPathPattern("/member/state/list"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_NodeHost_ListMemberState_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_NodeHost_ListMemberState_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	mux.Handle("GET", pattern_NodeHost_SubscribeMemberState_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
+	})
+
 	return nil
 }
 
@@ -2123,6 +2201,50 @@ func RegisterNodeHostHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 
 	})
 
+	mux.Handle("GET", pattern_NodeHost_ListMemberState_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/service.NodeHost/ListMemberState", runtime.WithHTTPPathPattern("/member/state/list"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_NodeHost_ListMemberState_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_NodeHost_ListMemberState_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	mux.Handle("GET", pattern_NodeHost_SubscribeMemberState_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/service.NodeHost/SubscribeMemberState", runtime.WithHTTPPathPattern("/member/state/subscribe"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_NodeHost_SubscribeMemberState_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_NodeHost_SubscribeMemberState_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+
+	})
+
 	return nil
 }
 
@@ -2148,6 +2270,10 @@ var (
 	pattern_NodeHost_TransferLeader_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 1, 0, 4, 1, 5, 1, 2, 2, 2, 3}, []string{"shard", "shard_id", "node", "lead"}, ""))
 
 	pattern_NodeHost_CreateSnapshot_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 1, 0, 4, 1, 5, 1, 2, 2, 2, 3}, []string{"shard", "shard_id", "snapshot", "create"}, ""))
+
+	pattern_NodeHost_ListMemberState_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"member", "state", "list"}, ""))
+
+	pattern_NodeHost_SubscribeMemberState_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"member", "state", "subscribe"}, ""))
 )
 
 var (
@@ -2172,6 +2298,10 @@ var (
 	forward_NodeHost_TransferLeader_0 = runtime.ForwardResponseMessage
 
 	forward_NodeHost_CreateSnapshot_0 = runtime.ForwardResponseMessage
+
+	forward_NodeHost_ListMemberState_0 = runtime.ForwardResponseMessage
+
+	forward_NodeHost_SubscribeMemberState_0 = runtime.ForwardResponseStream
 )
 
 // RegisterSpecHandlerFromEndpoint is same as RegisterSpecHandler but

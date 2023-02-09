@@ -8,7 +8,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/signal"
 	"syscall"
 	"time"
 
@@ -28,26 +27,13 @@ import (
 	"github.com/LilithGames/moxa/utils"
 )
 
-func SignalHandler(stopper *syncutil.Stopper, signals ...os.Signal) {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, signals...)
-	stopper.RunWorker(func() {
-		select {
-		case <-ch:
-			stopper.Close()
-		case <-stopper.ShouldStop():
-			return
-		}
-	})
-}
-
 var masterShardVersion = ""
 var subShardVersion = ""
 
 func main() {
 	stopper := syncutil.NewStopper()
 	ctx := utils.BindContext(stopper, context.Background())
-	SignalHandler(stopper, syscall.SIGINT, syscall.SIGTERM)
+	utils.SignalHandler(stopper, syscall.SIGINT, syscall.SIGTERM)
 
 	log.SetOutput(&logutils.LevelFilter{
 		Levels:   []logutils.LogLevel{"DEBUG", "INFO", "WARN", "ERROR"},
@@ -68,7 +54,7 @@ func main() {
 		GrpcPort: 8001,
 	}
 	master := &moxa.ShardProfile{
-		Name: moxa.MasterProfileName,
+		Name:     moxa.MasterProfileName,
 		CreateFn: runtime.NewMigrationStateMachineWrapper(master_shard.NewStateMachine),
 		Config: config.Config{
 			CheckQuorum:         true,
@@ -82,7 +68,7 @@ func main() {
 	}
 	subProfileName := "SubProfile"
 	sub := &moxa.ShardProfile{
-		Name: subProfileName,
+		Name:     subProfileName,
 		CreateFn: runtime.NewMigrationStateMachineWrapper(sub_shard.NewExampleStateMachine),
 		Config: config.Config{
 			CheckQuorum:         true,

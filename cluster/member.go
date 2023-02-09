@@ -9,6 +9,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
 	eventbus "github.com/LilithGames/go-event-bus/v4"
+	"github.com/lni/goutils/syncutil"
+
+	"github.com/LilithGames/moxa/utils"
 )
 
 type MemberNode struct {
@@ -23,10 +26,10 @@ type IMembers interface {
 	UpdateNodeHostInfo(nhi *dragonboat.NodeHostInfo) error
 	SyncState() error
 	Foreach(func(MemberNode) bool)
+	ChangesSince(version uint64) (chan utils.Stream[utils.SyncStateView[*MemberState]], chan struct{})
 	Nums() int
 	Notify(notify *MemberNotify, opts NotifyOptions) error
 	Stop() error
-
 }
 
 type Members struct {
@@ -36,6 +39,7 @@ type Members struct {
 	ml   *memberlist.Memberlist
 	*MemberStateManager
 	bus *eventbus.EventBus
+	stopper *syncutil.Stopper
 }
 
 func NewMembers(meta MemberMeta, bus *eventbus.EventBus, seed []string) (IMembers, error) {
@@ -43,7 +47,8 @@ func NewMembers(meta MemberMeta, bus *eventbus.EventBus, seed []string) (IMember
 		seed: seed,
 		meta: &meta,
 		bus:  bus,
-		MemberStateManager: NewMemberStateManager(meta.NodeHostId),
+		stopper: syncutil.NewStopper(),
+		MemberStateManager: NewMemberStateManager(meta.NodeHostId, bus),
 	}
 	conf := memberlist.DefaultLANConfig()
 	conf.Name = meta.NodeHostId
@@ -82,14 +87,20 @@ func (it *Members) UpdateNodeHostInfo(nhi *dragonboat.NodeHostInfo) error {
 	for _, ni := range nhi.LogInfo {
 		logShards[ni.ClusterID] = ni.NodeID
 	}
-	if err := it.SetMemberState(MemberState{NodeHostId: nhi.NodeHostID, Shards: shards, LogShards: logShards}); err != nil {
+	state := MemberState{
+		NodeHostId: nhi.NodeHostID,
+		Meta: it.meta,
+		Shards: shards,
+		LogShards: logShards,
+	}
+	if err := it.SetMemberState(state); err != nil {
 		return fmt.Errorf("SetMemberState err: %w", err)
 	}
 	return nil
 }
 
 func (it *Members) Foreach(fn func(MemberNode) bool) {
-	mstate := it.GetMemberStateList()
+	mstate, _ := it.GetMemberStateList()
 	for _, member := range it.ml.Members() {
 		meta := &MemberMeta{}
 		if err := proto.Unmarshal(member.Meta, meta); err != nil {
@@ -105,11 +116,58 @@ func (it *Members) Foreach(fn func(MemberNode) bool) {
 	}
 }
 
+func (it *Members) ChangesSince(version uint64) (chan utils.Stream[utils.SyncStateView[*MemberState]], chan struct{}) {
+	stream := make(chan utils.Stream[utils.SyncStateView[*MemberState]], 0)
+	done := make(chan struct{}, 0)
+	w := utils.NewStreamWriter(stream)
+	it.stopper.RunWorker(func() {
+		defer w.Done()
+		var curr uint64
+		changed, sub := it.bus.Subscribe(EventTopic_MemberStateChanged.String())
+		defer sub.Close()
+		items, err := it.MemberStateManager.Since(version)
+		if err != nil {
+			w.PutError(fmt.Errorf("MemberStateManager.Since(%d), err: %w", version, err))
+			return
+		}
+		for _, item := range items {
+			w.PutItem(item)
+			if item.Version > curr {
+				curr = item.Version
+			}
+		}
+		for {
+			select {
+			case ev := <-changed:
+				e := ev.Data.(*MemberStateChangedEvent)
+				if e.Version > curr {
+					items, err := it.MemberStateManager.Get(e.Version)
+					if err != nil {
+						w.PutError(fmt.Errorf("MemberStateManager.Get(%d) err: %w", e.Version, err))
+						return
+					}
+					for _, item := range items {
+						w.PutItem(item)
+					}
+					curr = e.Version
+				}
+			case <-done:
+				return 
+			case <-it.stopper.ShouldStop():
+				w.PutError(fmt.Errorf("Members closed"))
+				return
+			}
+		}
+	})
+	return stream, done
+}
+
 func (it *Members) Nums() int {
 	return it.ml.NumMembers()
 }
 
 func (it *Members) Stop() error {
+	it.stopper.Stop()
 	it.ml.Leave(time.Second)
 	return it.ml.Shutdown()
 }
@@ -127,4 +185,12 @@ func (it *Members) LocalState(join bool) []byte{
 func (it *Members) MergeRemoteState(buf []byte, join bool) {
 	it.MemberStateManager.MergeState(buf, join)
 }
+func (it *Members) NotifyJoin(node *memberlist.Node) {
 
+}
+func (it *Members) NotifyLeave(node *memberlist.Node) {
+	it.MemberStateManager.DeleteState(node.Name)
+}
+func (it *Members) NotifyUpdate(node *memberlist.Node) {
+
+}
