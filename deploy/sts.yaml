@@ -8,7 +8,7 @@ spec:
     matchLabels:
       app: moxa
   serviceName: moxa-headless
-  replicas: 3
+  replicas: 5
   revisionHistoryLimit: 0
   podManagementPolicy: Parallel
   template:

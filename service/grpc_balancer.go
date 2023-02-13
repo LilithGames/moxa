@@ -1,12 +1,15 @@
 package service
 
 import (
+	"fmt"
 	"context"
 	"log"
 	"math/rand"
 	"sync"
+	"strconv"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/balancer/base"
 	"google.golang.org/grpc/codes"
@@ -19,13 +22,13 @@ const DragonboatBalancerRouteShardLeader = "DragonboatBalancerRouteShardLeader"
 const DragonboatBalancerRouteNodeHost = "DragonboatBalancerRouteNodeHost"
 
 func WithRouteShard(ctx context.Context, shardID uint64) context.Context {
-	return context.WithValue(ctx, DragonboatBalancerRouteShard, shardID)
+	return metadata.AppendToOutgoingContext(ctx, DragonboatBalancerRouteShard, fmt.Sprintf("%d", shardID))
 }
 func WithRouteShardLeader(ctx context.Context, shardID uint64) context.Context {
-	return context.WithValue(ctx, DragonboatBalancerRouteShardLeader, shardID)
+	return metadata.AppendToOutgoingContext(ctx, DragonboatBalancerRouteShardLeader, fmt.Sprintf("%d", shardID))
 }
 func WithRouteNodeHost(ctx context.Context, nodeHostID string) context.Context {
-	return context.WithValue(ctx, DragonboatBalancerRouteNodeHost, nodeHostID)
+	return metadata.AppendToOutgoingContext(ctx, DragonboatBalancerRouteNodeHost, nodeHostID)
 }
 
 func init() {
@@ -102,19 +105,32 @@ type dragonboatRoundRobinBalancerPicker struct {
 }
 
 func (it *dragonboatRoundRobinBalancerPicker) Pick(info balancer.PickInfo) (balancer.PickResult, error) {
-	if nhid, ok := info.Ctx.Value(DragonboatBalancerRouteNodeHost).(string); ok {
+	md, ok := metadata.FromOutgoingContext(info.Ctx)
+	if !ok {
+		return it.fallback.Pick(info)
+	}
+	if items := md.Get(DragonboatBalancerRouteNodeHost); len(items) != 0 {
+		nhid := items[0]
 		if picker, ok := it.nodeHostsPickers[nhid]; ok {
 			return picker.Pick(info)
 		} else {
 			return balancer.PickResult{}, grpc.Errorf(RouteNotFound, "balancer nodehost %s not found", nhid)
 		}
-	} else if shardID, ok := info.Ctx.Value(DragonboatBalancerRouteShardLeader).(uint64); ok {
+	} else if items := md.Get(DragonboatBalancerRouteShardLeader); len(items) != 0 {
+		shardID, err := strconv.ParseUint(items[0], 10, 64)
+		if err != nil {
+			return balancer.PickResult{}, grpc.Errorf(codes.InvalidArgument, "invalid shardID %s", items[0])
+		}
 		if picker, ok := it.leaderPickers[shardID]; ok {
 			return picker.Pick(info)
 		} else {
 			return balancer.PickResult{}, grpc.Errorf(RouteNotFound, "balancer shard leader %d not found", shardID)
 		}
-	} else if shardID, ok := info.Ctx.Value(DragonboatBalancerRouteShard).(uint64); ok {
+	} else if items := md.Get(DragonboatBalancerRouteShard); len(items) != 0 {
+		shardID, err := strconv.ParseUint(items[0], 10, 64)
+		if err != nil {
+			return balancer.PickResult{}, grpc.Errorf(codes.InvalidArgument, "invalid shardID %s", items[0])
+		}
 		if picker, ok := it.shardPickers[shardID]; ok {
 			return picker.Pick(info)
 		} else {

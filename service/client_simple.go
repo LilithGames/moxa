@@ -22,11 +22,11 @@ func NewSimpleClient(target string) (IClient, error) {
 }
 
 func (it *SimpleClient) NodeHost() NodeHostClient {
-	return NewNodeHostClient(it.conn)
+	return NewNodeHostClientWrapper(NewNodeHostClient(it.conn))
 }
 
 func (it *SimpleClient) Spec() SpecClient {
-	return NewSpecClient(it.conn)
+	return NewSpecClientWrapper(NewSpecClient(it.conn))
 }
 
 func (it *SimpleClient) Wait(ctx context.Context, timeout time.Duration) error {

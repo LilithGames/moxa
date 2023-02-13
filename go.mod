@@ -8,7 +8,7 @@ require (
 	github.com/antonmedv/expr v1.12.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.0.0-00010101000000-000000000000
-	github.com/hashicorp/go-multierror v1.0.0
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/logutils v1.0.0
 	github.com/hashicorp/memberlist v0.5.0
 	github.com/jedib0t/go-pretty/v6 v6.4.4
@@ -17,6 +17,7 @@ require (
 	github.com/puzpuzpuz/xsync v1.5.2
 	github.com/samber/lo v1.33.0
 	github.com/serialx/hashring v0.0.0-20200727003509-22c0c7ab6b1b
+	github.com/siderolabs/grpc-proxy v0.4.0
 	github.com/stretchr/testify v1.8.0
 	github.com/urfave/cli/v2 v2.23.7
 	google.golang.org/genproto v0.0.0-20221014213838-99cd37c6964a

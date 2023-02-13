@@ -17,6 +17,8 @@ type ISyncClientSource[T any, K comparable] interface {
 
 type ISyncClient[T any, K comparable] interface {
 	Get(key K) (T, error)
+	List() (map[K]T, uint64)
+	Version() uint64
 	Close() error
 }
 
@@ -24,8 +26,10 @@ type SyncClient[T any, K comparable] struct {
 	src ISyncClientSource[T, K]
 
 	mu sync.RWMutex
-	dict map[K]T
 	stopper *syncutil.Stopper
+
+	dict map[K]T
+	version uint64
 }
 
 func NewSyncClient[T any, K comparable](src ISyncClientSource[T, K]) ISyncClient[T, K] {
@@ -48,6 +52,21 @@ func (it *SyncClient[T, K]) Get(key K) (T, error) {
 	return item, nil
 }
 
+func (it *SyncClient[T, K]) List() (map[K]T, uint64) {
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+	result := make(map[K]T, len(it.dict))
+	for k, v := range it.dict {
+		result[k] = v
+	}
+	return result, it.version
+}
+
+func (it *SyncClient[T, K]) Version() uint64 {
+	it.mu.RLock()
+	defer it.mu.RUnlock()
+    return it.version
+}
 
 func (it *SyncClient[T, K]) updateWithRetry() {
 	for {
@@ -71,9 +90,11 @@ func (it *SyncClient[T, K]) update() error {
 	}
 	it.mu.Lock()
 	it.dict = make(map[K]T, len(items))
+	it.version = 0
 	for _, item := range items {
 		key := it.src.Key(item)
 		it.dict[key] = item
+		it.version = version
 	}
 	it.mu.Unlock()
 	ch, err := it.src.Subscribe(it.stopper, version)
@@ -100,6 +121,7 @@ func (it *SyncClient[T, K]) update() error {
 			case SyncStateType_Remove:
 				delete(it.dict, key)
 			}
+			it.version = change.Version
 			it.mu.Unlock()
 		case <-it.stopper.ShouldStop():
 			return nil

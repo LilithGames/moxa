@@ -3,3 +3,4 @@ kind: Kustomization
 namespace: temp
 resources:
   - sts.yaml
+  - proxy.yaml
