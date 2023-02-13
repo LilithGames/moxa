@@ -1,11 +1,14 @@
 package cluster
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
 	"github.com/lni/dragonboat/v3"
+	"github.com/lni/dragonboat/v3/tools"
 )
 
 type INodeHostHelper interface {
@@ -103,6 +106,30 @@ func (it *NodeHostHelper) GetNodes(shardID uint64) map[uint64]string {
 		if ci.ClusterID == shardID {
 			return ci.Nodes
 		}
+	}
+	return nil
+}
+
+func (it *NodeHostHelper) LoadSnapshots(ctx context.Context, snapshots map[uint64]*RemoteSnapshot) error {
+	if len(snapshots) == 0 {
+		return nil
+	}
+	nh := it.nh.Get()
+	conf := nh.NodeHostConfig()
+	nodeIDs := it.GetLogNodeIDs()
+	nh.Stop()
+	for shardID, snapshot := range snapshots {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		nodeID, ok := nodeIDs[shardID]
+		if !ok {
+			return fmt.Errorf("snapshot shard %d info not found", shardID)
+		}
+		if err := tools.ImportSnapshot(conf, snapshot.Path, snapshot.Nodes, nodeID); err != nil {
+			return fmt.Errorf("tools.ImportSnapshot(%s) err: %w", snapshot, err)
+		}
+		log.Println("[INFO]", fmt.Sprintf("Import snapshot shard: %d nodeID: %d snapshot: %v success", shardID, nodeID, snapshot))
 	}
 	return nil
 }

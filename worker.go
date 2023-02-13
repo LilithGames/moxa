@@ -125,7 +125,7 @@ func ShardSpecFixedSizeCreationWorker(cm cluster.Manager, profileName string, si
 					return true
 				})
 				name := fmt.Sprintf("auto-%d", id)
-				nodesView := &master_shard.ShardNodesView{Nodes: nodes}
+				nodesView := &master_shard.ShardNodesView{Nodes: nodes, Replica: lo.ToPtr(cm.MinClusterSize())}
 				resp, err := cm.Client().MasterShard().CreateShard(ctx, &master_shard.CreateShardRequest{Name: name, ProfileName: profileName, NodesView: nodesView}, runtime.WithClientTimeout(time.Second*10))
 				if err != nil {
 					log.Println("[WARN]", fmt.Errorf("ShardSpecFixedSizeCreationWorker MasterShard().CreateShard %s err: %w", name, err))

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	eventbus "github.com/LilithGames/go-event-bus/v4"
@@ -15,7 +13,7 @@ import (
 	"github.com/LilithGames/moxa/utils"
 )
 
-type KubernetesManager struct {
+type LocalManager struct {
 	config *Config
 	nh     *Provider[*dragonboat.NodeHost]
 	ms     IMembers
@@ -26,11 +24,8 @@ type KubernetesManager struct {
 	*NodeHostHelper
 }
 
-func NewKubernetesManager(ctx context.Context, config *Config) (Manager, error) {
-	if err := validateKubernetesEnvs(); err != nil {
-		return nil, fmt.Errorf("validateKubernetesEnvs err: %w", err)
-	}
-	it := &KubernetesManager{
+func NewLocalManager(ctx context.Context, config *Config) (Manager, error) {
+	it := &LocalManager{
 		config: config,
 		nh:     NewProvider[*dragonboat.NodeHost](nil),
 		bus:    eventbus.NewEventBus(),
@@ -40,8 +35,12 @@ func NewKubernetesManager(ctx context.Context, config *Config) (Manager, error) 
 		return nil, fmt.Errorf("startNodeHost err: %w", err)
 	}
 	it.NodeHostHelper = &NodeHostHelper{it.nh}
+	hostName, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("os.Hostname err: %w", err)
+	}
 	meta := MemberMeta{
-		HostName:         os.Getenv("POD_NAME"),
+		HostName:         hostName,
 		NodeHostId:       it.NodeHostID(),
 		RaftAddress:      it.RaftAddress(),
 		NodeHostIndex:    it.NodeHostIndex(),
@@ -70,14 +69,14 @@ func NewKubernetesManager(ctx context.Context, config *Config) (Manager, error) 
 	return it, nil
 }
 
-func (it *KubernetesManager) startNodeHost() error {
+func (it *LocalManager) startNodeHost() error {
 	listener := &eventListener{bus: it.bus}
 	nhconf := config.NodeHostConfig{
 		DeploymentID:        it.config.DeploymentId,
 		NodeHostDir:         it.config.NodeHostDir,
 		AddressByNodeHostID: false,
 		RTTMillisecond:      it.config.RttMillisecond,
-		RaftAddress:         fmt.Sprintf("%s.%s.%s.svc.cluster.local:63000", os.Getenv("POD_NAME"), os.Getenv("POD_SERVICENAME"), os.Getenv("POD_NAMESPACE")),
+		RaftAddress:         fmt.Sprintf("localhost:63000"),
 		RaftEventListener:   listener,
 		SystemEventListener: listener,
 		EnableMetrics:       it.config.EnableMetrics,
@@ -90,41 +89,41 @@ func (it *KubernetesManager) startNodeHost() error {
 	return nil
 }
 
-func (it *KubernetesManager) NodeHost() *dragonboat.NodeHost {
+func (it *LocalManager) NodeHost() *dragonboat.NodeHost {
 	return it.nh.Get()
 }
 
-func (it *KubernetesManager) Members() IMembers {
+func (it *LocalManager) Members() IMembers {
 	return it.ms
 }
 
-func (it *KubernetesManager) Client() IClient {
+func (it *LocalManager) Client() IClient {
 	return it.cc
 }
 
-func (it *KubernetesManager) Config() *Config {
+func (it *LocalManager) Config() *Config {
 	return it.config
 }
 
-func (it *KubernetesManager) StartupReady() *Signal {
+func (it *LocalManager) StartupReady() *Signal {
 	return it.ready
 }
 
-func (it *KubernetesManager) EventBus() *eventbus.EventBus {
+func (it *LocalManager) EventBus() *eventbus.EventBus {
 	return it.bus
 }
-func (it *KubernetesManager) MinClusterSize() int32 {
-	return 3
+func (it *LocalManager) MinClusterSize() int32 {
+	return 1
 }
-func (it *KubernetesManager) MasterNodeID() uint64 {
+func (it *LocalManager) MasterNodeID() uint64 {
 	return it.NodeHostNum()
 }
 
-func (it *KubernetesManager) NodeHostIndex() int32 {
-	return getPodNodeHostIndex(os.Getenv("POD_NAME"))
+func (it *LocalManager) NodeHostIndex() int32 {
+	return 0
 }
 
-func (it *KubernetesManager) ImportSnapshots(ctx context.Context, snapshots map[uint64]*RemoteSnapshot) error {
+func (it *LocalManager) ImportSnapshots(ctx context.Context, snapshots map[uint64]*RemoteSnapshot) error {
 	if err := it.LoadSnapshots(ctx, snapshots); err != nil {
 		return fmt.Errorf("LoadSnapshots err: %w", err)
 	}
@@ -134,40 +133,8 @@ func (it *KubernetesManager) ImportSnapshots(ctx context.Context, snapshots map[
 	return nil
 }
 
-func (it *KubernetesManager) Stop() error {
+func (it *LocalManager) Stop() error {
 	it.ms.Stop()
 	it.nh.Get().Stop()
 	return nil
-}
-
-func validateKubernetesEnvs() error {
-	if os.Getenv("POD_IP") == "" {
-		return fmt.Errorf("needs env POD_IP")
-	}
-	if os.Getenv("POD_NAMESPACE") == "" {
-		return fmt.Errorf("needs env POD_NAMESPACE")
-	}
-	if os.Getenv("POD_NAME") == "" {
-		return fmt.Errorf("needs env POD_NAME")
-	}
-	if os.Getenv("POD_SERVICENAME") == "" {
-		return fmt.Errorf("needs env POD_SERVICENAME")
-	}
-	if os.Getenv("POD_SHAREDIR") == "" {
-		return fmt.Errorf("needs env POD_SHAREDIR")
-	}
-
-	return nil
-}
-
-func getPodNodeHostIndex(podname string) int32 {
-	items := strings.Split(podname, "-")
-	if len(items) < 2 {
-		panic("invalid podname: " + podname)
-	}
-	index, err := strconv.ParseInt(items[len(items)-1], 10, 32)
-	if err != nil {
-		panic(err)
-	}
-	return int32(index)
 }

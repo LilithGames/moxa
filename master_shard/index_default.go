@@ -12,6 +12,12 @@ func NewDefaultIndex(source *Indices) IIndex[string] {
 	if source == nil {
 		panic("source required")
 	}
+	if source.Indices == nil {
+		source.Indices = make(map[string]*IndexData, 0)
+	}
+	if source.Meta == nil {
+		source.Meta = make(map[string]*IndexMeta, 0)
+	}
 	return &DefaultIndex{index: source}
 }
 

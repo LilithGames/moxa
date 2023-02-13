@@ -22,7 +22,6 @@ type Manager interface {
 	MinClusterSize() int32
 	NodeHostIndex() int32
 	MasterNodeID() uint64
-	ServiceName() string
 
 	ImportSnapshots(ctx context.Context, snapshots map[uint64]*RemoteSnapshot) error
 	Stop() error
