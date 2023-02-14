@@ -148,6 +148,13 @@ message SubscribeMemberStateResponse {
   utils.SyncStateType type = 3;
 }
 
+message SyncMemberStateRequest {}
+message SyncMemberStateResponse {
+  cluster.MemberState state = 1;
+  uint64 version = 2;
+  utils.SyncStateType type = 3;
+}
+
 service NodeHost {
   rpc Info(NodeHostInfoRequest) returns (NodeHostInfoResponse) {
     option (google.api.http) = {
@@ -212,6 +219,11 @@ service NodeHost {
   rpc SubscribeMemberState(SubscribeMemberStateRequest) returns (stream SubscribeMemberStateResponse) {
     option (google.api.http) = {
       get: "/member/state/subscribe",
+    };
+  }
+  rpc SyncMemberState(SyncMemberStateRequest) returns (stream SyncMemberStateResponse) {
+    option (google.api.http) = {
+      get: "/member/state/sync",
     };
   }
 }

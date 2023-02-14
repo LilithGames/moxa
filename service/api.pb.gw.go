@@ -689,6 +689,23 @@ func request_NodeHost_SubscribeMemberState_0(ctx context.Context, marshaler runt
 
 }
 
+func request_NodeHost_SyncMemberState_0(ctx context.Context, marshaler runtime.Marshaler, client NodeHostClient, req *http.Request, pathParams map[string]string) (NodeHost_SyncMemberStateClient, runtime.ServerMetadata, error) {
+	var protoReq SyncMemberStateRequest
+	var metadata runtime.ServerMetadata
+
+	stream, err := client.SyncMemberState(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+
+}
+
 var (
 	filter_Spec_AddShardSpec_0 = &utilities.DoubleArray{Encoding: map[string]int{"shard_name": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
 )
@@ -1584,6 +1601,13 @@ func RegisterNodeHostHandlerServer(ctx context.Context, mux *runtime.ServeMux, s
 		return
 	})
 
+	mux.Handle("GET", pattern_NodeHost_SyncMemberState_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
+	})
+
 	return nil
 }
 
@@ -2245,6 +2269,28 @@ func RegisterNodeHostHandlerClient(ctx context.Context, mux *runtime.ServeMux, c
 
 	})
 
+	mux.Handle("GET", pattern_NodeHost_SyncMemberState_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = runtime.AnnotateContext(ctx, mux, req, "/service.NodeHost/SyncMemberState", runtime.WithHTTPPathPattern("/member/state/sync"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_NodeHost_SyncMemberState_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_NodeHost_SyncMemberState_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+
+	})
+
 	return nil
 }
 
@@ -2274,6 +2320,8 @@ var (
 	pattern_NodeHost_ListMemberState_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"member", "state", "list"}, ""))
 
 	pattern_NodeHost_SubscribeMemberState_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"member", "state", "subscribe"}, ""))
+
+	pattern_NodeHost_SyncMemberState_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"member", "state", "sync"}, ""))
 )
 
 var (
@@ -2302,6 +2350,8 @@ var (
 	forward_NodeHost_ListMemberState_0 = runtime.ForwardResponseMessage
 
 	forward_NodeHost_SubscribeMemberState_0 = runtime.ForwardResponseStream
+
+	forward_NodeHost_SyncMemberState_0 = runtime.ForwardResponseStream
 )
 
 // RegisterSpecHandlerFromEndpoint is same as RegisterSpecHandler but

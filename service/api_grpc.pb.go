@@ -31,6 +31,7 @@ type NodeHostClient interface {
 	CreateSnapshot(ctx context.Context, in *CreateSnapshotRequest, opts ...grpc.CallOption) (*CreateSnapshotResponse, error)
 	ListMemberState(ctx context.Context, in *ListMemberStateRequest, opts ...grpc.CallOption) (*ListMemberStateResponse, error)
 	SubscribeMemberState(ctx context.Context, in *SubscribeMemberStateRequest, opts ...grpc.CallOption) (NodeHost_SubscribeMemberStateClient, error)
+	SyncMemberState(ctx context.Context, in *SyncMemberStateRequest, opts ...grpc.CallOption) (NodeHost_SyncMemberStateClient, error)
 }
 
 type nodeHostClient struct {
@@ -181,6 +182,38 @@ func (x *nodeHostSubscribeMemberStateClient) Recv() (*SubscribeMemberStateRespon
 	return m, nil
 }
 
+func (c *nodeHostClient) SyncMemberState(ctx context.Context, in *SyncMemberStateRequest, opts ...grpc.CallOption) (NodeHost_SyncMemberStateClient, error) {
+	stream, err := c.cc.NewStream(ctx, &NodeHost_ServiceDesc.Streams[1], "/service.NodeHost/SyncMemberState", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &nodeHostSyncMemberStateClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type NodeHost_SyncMemberStateClient interface {
+	Recv() (*SyncMemberStateResponse, error)
+	grpc.ClientStream
+}
+
+type nodeHostSyncMemberStateClient struct {
+	grpc.ClientStream
+}
+
+func (x *nodeHostSyncMemberStateClient) Recv() (*SyncMemberStateResponse, error) {
+	m := new(SyncMemberStateResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // NodeHostServer is the server API for NodeHost service.
 // All implementations must embed UnimplementedNodeHostServer
 // for forward compatibility
@@ -198,6 +231,7 @@ type NodeHostServer interface {
 	CreateSnapshot(context.Context, *CreateSnapshotRequest) (*CreateSnapshotResponse, error)
 	ListMemberState(context.Context, *ListMemberStateRequest) (*ListMemberStateResponse, error)
 	SubscribeMemberState(*SubscribeMemberStateRequest, NodeHost_SubscribeMemberStateServer) error
+	SyncMemberState(*SyncMemberStateRequest, NodeHost_SyncMemberStateServer) error
 	mustEmbedUnimplementedNodeHostServer()
 }
 
@@ -243,6 +277,9 @@ func (UnimplementedNodeHostServer) ListMemberState(context.Context, *ListMemberS
 }
 func (UnimplementedNodeHostServer) SubscribeMemberState(*SubscribeMemberStateRequest, NodeHost_SubscribeMemberStateServer) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeMemberState not implemented")
+}
+func (UnimplementedNodeHostServer) SyncMemberState(*SyncMemberStateRequest, NodeHost_SyncMemberStateServer) error {
+	return status.Errorf(codes.Unimplemented, "method SyncMemberState not implemented")
 }
 func (UnimplementedNodeHostServer) mustEmbedUnimplementedNodeHostServer() {}
 
@@ -494,6 +531,27 @@ func (x *nodeHostSubscribeMemberStateServer) Send(m *SubscribeMemberStateRespons
 	return x.ServerStream.SendMsg(m)
 }
 
+func _NodeHost_SyncMemberState_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SyncMemberStateRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(NodeHostServer).SyncMemberState(m, &nodeHostSyncMemberStateServer{stream})
+}
+
+type NodeHost_SyncMemberStateServer interface {
+	Send(*SyncMemberStateResponse) error
+	grpc.ServerStream
+}
+
+type nodeHostSyncMemberStateServer struct {
+	grpc.ServerStream
+}
+
+func (x *nodeHostSyncMemberStateServer) Send(m *SyncMemberStateResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // NodeHost_ServiceDesc is the grpc.ServiceDesc for NodeHost service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -554,6 +612,11 @@ var NodeHost_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "SubscribeMemberState",
 			Handler:       _NodeHost_SubscribeMemberState_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SyncMemberState",
+			Handler:       _NodeHost_SyncMemberState_Handler,
 			ServerStreams: true,
 		},
 	},

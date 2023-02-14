@@ -9,6 +9,8 @@ import (
 
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/tools"
+
+	"github.com/LilithGames/moxa/utils"
 )
 
 type INodeHostHelper interface {
@@ -25,7 +27,7 @@ type INodeHostHelper interface {
 }
 
 type NodeHostHelper struct {
-	nh *Provider[*dragonboat.NodeHost]
+	nh *utils.Provider[*dragonboat.NodeHost]
 }
 
 func (it *NodeHostHelper) GetNodeIDs() map[uint64]uint64 {

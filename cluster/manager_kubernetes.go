@@ -17,7 +17,7 @@ import (
 
 type KubernetesManager struct {
 	config *Config
-	nh     *Provider[*dragonboat.NodeHost]
+	nh     *utils.Provider[*dragonboat.NodeHost]
 	ms     IMembers
 	bus    *eventbus.EventBus
 	cc     IClient
@@ -32,7 +32,7 @@ func NewKubernetesManager(ctx context.Context, config *Config) (Manager, error) 
 	}
 	it := &KubernetesManager{
 		config: config,
-		nh:     NewProvider[*dragonboat.NodeHost](nil),
+		nh:     utils.NewProvider[*dragonboat.NodeHost](nil),
 		bus:    eventbus.NewEventBus(),
 		ready:  NewSignal(false),
 	}

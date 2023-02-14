@@ -289,6 +289,34 @@ func (it *NodeHostService) SubscribeMemberState(req *SubscribeMemberStateRequest
 		}
 	}
 }
+func (it *NodeHostService) SyncMemberState(req *SyncMemberStateRequest, svr NodeHost_SyncMemberStateServer) error {
+	state, version := it.cm.Members().GetMemberStateList()
+	for _, ms := range state {
+		if err := svr.Send(&SyncMemberStateResponse{State: ms, Version: version, Type: utils.SyncStateType_Add}); err != nil {
+			return fmt.Errorf("svr.Send err: %w", err)
+		}
+	}
+	stream, done := it.cm.Members().ChangesSince(version)
+	for {
+		select {
+		case ss, ok := <-stream:
+			if !ok {
+				return fmt.Errorf("stream eof")
+			}
+			if ss.Error != nil {
+				return fmt.Errorf("stream err: %w", ss.Error)
+			}
+			change := ss.Item
+			if err := svr.Send(&SyncMemberStateResponse{State: change.Item, Type: change.Type, Version: change.Version}); err != nil {
+				return fmt.Errorf("svr.Send() err: %w", err)
+			}
+		case <-svr.Context().Done():
+			close(done)
+			return nil
+		}
+	}
+
+}
 
 func (it *NodeHostService) getMember(nhIndex int32) *cluster.MemberMeta {
 	var member *cluster.MemberMeta

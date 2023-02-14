@@ -15,7 +15,7 @@ import (
 
 type LocalManager struct {
 	config *Config
-	nh     *Provider[*dragonboat.NodeHost]
+	nh     *utils.Provider[*dragonboat.NodeHost]
 	ms     IMembers
 	bus    *eventbus.EventBus
 	cc     IClient
@@ -27,7 +27,7 @@ type LocalManager struct {
 func NewLocalManager(ctx context.Context, config *Config) (Manager, error) {
 	it := &LocalManager{
 		config: config,
-		nh:     NewProvider[*dragonboat.NodeHost](nil),
+		nh:     utils.NewProvider[*dragonboat.NodeHost](nil),
 		bus:    eventbus.NewEventBus(),
 		ready:  NewSignal(false),
 	}
