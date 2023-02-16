@@ -71,6 +71,9 @@ func (it *Members) SyncState() error {
 }
 
 func (it *Members) UpdateNodeHostInfo(nhi *dragonboat.NodeHostInfo) error {
+	if nhi == nil {
+		return fmt.Errorf("nhi is required")
+	}
 	shards := make(map[uint64]*MemberShard)
 	logShards := make(map[uint64]uint64)
 	for _, ci := range nhi.ClusterInfoList {

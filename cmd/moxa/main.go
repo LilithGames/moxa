@@ -45,7 +45,7 @@ func main() {
 		NodeHostDir:     "/data/nodehost",
 		LocalStorageDir: "/data/storage",
 		MemberSeed:      []string{"moxa-headless:7946"},
-		RttMillisecond:  1,
+		RttMillisecond:  100,
 		DeploymentId:    0,
 		EnableMetrics:   false,
 	}

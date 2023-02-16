@@ -4,6 +4,7 @@ import (
 	"log"
 	"fmt"
 	"syscall"
+	"net"
 
 	"github.com/urfave/cli/v2"
 	"github.com/lni/goutils/syncutil"
@@ -31,6 +32,14 @@ var cmdDebug = &cli.Command{
 					Action: actionSubscribeMembers,
 					Flags: []cli.Flag{},
 				},
+			},
+		},
+		{
+			Name: "resolve",
+			Aliases: []string{},
+			Action: actionResolve,
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Value: "", Usage: "dns name", Required: true},
 			},
 		},
 	},
@@ -72,5 +81,17 @@ func actionSubscribeMembers(cCtx *cli.Context) error {
 		helper.Cancel()
 	})
 	stopper.Wait()
+	return nil
+}
+
+func actionResolve(cCtx *cli.Context) error {
+	helper := NewHelper(cCtx)
+	name := cCtx.String("name")
+	r := net.Resolver{PreferGo: true}
+	ips, err := r.LookupIP(helper.Ctx(), "ip4", name)
+	if err != nil {
+		return fmt.Errorf("LookupIP(%s) err: %w", name, err)
+	}
+	fmt.Printf("%+v\n", ips)
 	return nil
 }

@@ -58,6 +58,10 @@ func (it *ClusterService) Config() *Config {
 	return it.config
 }
 
+func (it *ClusterService) Stopper() *syncutil.Stopper {
+	return it.stopper
+}
+
 func (it *ClusterService) Run() error {
 	mux := runtime.NewServeMux(runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 		MarshalOptions:   protojson.MarshalOptions{Indent: "  ", Multiline: true, EmitUnpopulated: true},

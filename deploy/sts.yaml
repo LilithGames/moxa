@@ -25,7 +25,6 @@ spec:
             - bash
             - -c
             - |
-              # tail -f /dev/null
               exec /ko-app/moxa
           env: 
             - name: POD_IP

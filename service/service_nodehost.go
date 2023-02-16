@@ -10,6 +10,7 @@ import (
 	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
 	gruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lni/dragonboat/v3"
+	"github.com/lni/goutils/syncutil"
 	"github.com/samber/lo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -23,12 +24,13 @@ import (
 
 type NodeHostService struct {
 	cm cluster.Manager
+	stopper *syncutil.Stopper
 	client IClient
 	UnimplementedNodeHostServer
 }
 
 func RegisterNodeHostService(cs *ClusterService) {
-	srv := &NodeHostService{cm: cs.ClusterManager()}
+	srv := &NodeHostService{cm: cs.ClusterManager(), stopper: cs.Stopper()}
 	RegisterNodeHostServer(cs.GrpcServiceRegistrar(), srv)
 	cs.AddGrpcGatewayRegister(func(ctx context.Context, mux *gruntime.ServeMux) error {
 		opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
@@ -270,6 +272,9 @@ func (it *NodeHostService) ListMemberState(ctx context.Context, req *ListMemberS
 }
 func (it *NodeHostService) SubscribeMemberState(req *SubscribeMemberStateRequest, svr NodeHost_SubscribeMemberStateServer) error {
 	stream, done := it.cm.Members().ChangesSince(req.Version)
+	defer func() {
+		close(done)
+	}()
 	for {
 		select {
 		case ss, ok := <-stream:
@@ -284,8 +289,11 @@ func (it *NodeHostService) SubscribeMemberState(req *SubscribeMemberStateRequest
 				return fmt.Errorf("svr.Send() err: %w", err)
 			}
 		case <-svr.Context().Done():
-			close(done)
+			// client side close
 			return nil
+		case <-it.stopper.ShouldStop():
+			// server side close
+			return fmt.Errorf("server closing")
 		}
 	}
 }
