@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
-	"github.com/hashicorp/go-multierror"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
 	sm "github.com/lni/dragonboat/v3/statemachine"
@@ -16,9 +15,9 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/LilithGames/moxa/cluster"
+	"github.com/LilithGames/moxa/master_shard"
 	"github.com/LilithGames/moxa/service"
 	"github.com/LilithGames/moxa/utils"
-	"github.com/LilithGames/moxa/master_shard"
 )
 
 var MasterProfileName = "MasterProfile"
@@ -26,29 +25,28 @@ var ErrInitialMemberNotEnough error = errors.New("ErrInitialMemberNotEnough")
 var ErrProfileNameNotFound error = errors.New("ErrProfileNameNotFound")
 
 type ShardProfile struct {
-	Name string
+	Name     string
 	CreateFn any
-	Config config.Config
-	Version string
+	Config   config.Config
+	Version  string
 }
 
 type ShardManager struct {
-	cm      cluster.Manager
-	client  service.IClient
+	cm       cluster.Manager
+	client   service.IClient
 	profiles map[string]*ShardProfile
-	stopper *syncutil.Stopper
+	stopper  *syncutil.Stopper
 }
-
 
 func NewShardManager(cm cluster.Manager, client service.IClient, profiles ...*ShardProfile) (*ShardManager, error) {
 	profileDict := lo.SliceToMap(profiles, func(p *ShardProfile) (string, *ShardProfile) {
 		return p.Name, p
 	})
 	return &ShardManager{
-		cm: cm,
-		client: client,
+		cm:       cm,
+		client:   client,
 		profiles: profileDict,
-		stopper: syncutil.NewStopper(),
+		stopper:  syncutil.NewStopper(),
 	}, nil
 }
 
@@ -420,19 +418,19 @@ func (it *ShardManager) ShardSpecChangingDispatcher(ctx context.Context, e *clus
 	case cluster.ShardSpecChangingType_NodeJoining:
 		return nil
 		// if it.cm.IsLeader(e.ShardId) {
-			// nodeID := *e.CurrentNodeId
-			// addr := e.CurrentNodes[nodeID]
-			// if err := it.cm.Client().Raw(e.ShardId).AddNode(ctx, nodeID, addr, runtime.WithClientTimeout(time.Second*10)); err != nil {
-				// return fmt.Errorf("Client.Raw().AddNode err: %w", err)
-			// }
+		// nodeID := *e.CurrentNodeId
+		// addr := e.CurrentNodes[nodeID]
+		// if err := it.cm.Client().Raw(e.ShardId).AddNode(ctx, nodeID, addr, runtime.WithClientTimeout(time.Second*10)); err != nil {
+		// return fmt.Errorf("Client.Raw().AddNode err: %w", err)
+		// }
 		// }
 		// return nil
 	case cluster.ShardSpecChangingType_NodeLeaving:
 		return nil
 		// if it.cm.IsLeader(e.ShardId) {
-			// if err := it.cm.Client().Raw(e.ShardId).RemoveNode(ctx, *e.PreviousNodeId, runtime.WithClientTimeout(time.Second*10)); err != nil {
-				// return fmt.Errorf("Client.Raw().RemoveNode err: %w", err)
-			// }
+		// if err := it.cm.Client().Raw(e.ShardId).RemoveNode(ctx, *e.PreviousNodeId, runtime.WithClientTimeout(time.Second*10)); err != nil {
+		// return fmt.Errorf("Client.Raw().RemoveNode err: %w", err)
+		// }
 		// }
 		// return nil
 	case cluster.ShardSpecChangingType_Cleanup:
@@ -530,7 +528,7 @@ func (it *ShardManager) StopSubShard(ctx context.Context, shardID uint64, nodeID
 	return nil
 }
 
-func (it *ShardManager) DrainLeader(ci dragonboat.ClusterInfo) error {
+func (it *ShardManager) DrainLeader(ctx context.Context, ci dragonboat.ClusterInfo) error {
 	if !ci.IsLeader {
 		return nil
 	}
@@ -559,16 +557,37 @@ func (it *ShardManager) DrainLeader(ci dragonboat.ClusterInfo) error {
 	if err := it.cm.NodeHost().RequestLeaderTransfer(ci.ClusterID, targetNodeID); err != nil {
 		return fmt.Errorf("NodeHost().RequestLeaderTransfer(%d, %d) err: %w", ci.ClusterID, targetNodeID, err)
 	}
+
+	timer := time.NewTimer(time.Second)
+	for {
+		if !it.cm.IsLeader(ci.ClusterID) {
+			return nil
+		}
+		utils.ResetTimer(timer, time.Second)
+		select {
+		case <-timer.C:
+		case err := <-ctx.Done():
+			return fmt.Errorf("drain leader context err: %w", err)
+		}
+	}
 	return nil
 }
 
-func (it *ShardManager) Drain() error {
-	var errs error
+func (it *ShardManager) Drain(ctx context.Context) error {
 	nhi := it.cm.NodeHost().GetNodeHostInfo(dragonboat.NodeHostInfoOption{true})
-	for _, ci := range nhi.ClusterInfoList {
-		if err := it.DrainLeader(ci); err != nil {
-			errs = multierror.Append(errs, err)
+	dict := lo.SliceToMap(nhi.ClusterInfoList, func(ci dragonboat.ClusterInfo) (uint64, dragonboat.ClusterInfo) {
+		return ci.ClusterID, ci
+	})
+	_, err := utils.ParallelMap(lo.Keys(dict), func(shardID uint64) (uint64, error) {
+		ci := dict[shardID]
+		if err := it.DrainLeader(ctx, ci); err != nil {
+			return ci.ClusterID, fmt.Errorf("DrainLeader(%v) err: %w", ci, err)
 		}
+		log.Println("[INFO]", fmt.Sprintf("ShardManager: drain %d leader success", ci.ClusterID))
+		return ci.ClusterID, nil
+	})
+	if err != nil {
+		return fmt.Errorf("ParallelMap err: %w", err)
 	}
-	return errs
+	return nil
 }

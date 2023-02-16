@@ -139,7 +139,7 @@ func main() {
 	stopper.RunWorker(func() {
 		<-stopper.ShouldStop()
 		// drain
-		sm.Drain()
+		// sm.Drain(context.TODO())
 		time.Sleep(time.Second)
 
 		// terminate

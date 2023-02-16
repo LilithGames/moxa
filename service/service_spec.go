@@ -38,7 +38,12 @@ func RegisterSpecService(cs *ClusterService, client IClient) {
 func (it *SpecService) AddShardSpec(ctx context.Context, req *AddShardSpecRequest) (*AddShardSpecResponse, error) {
 	nodes := it.getNodeCreateViews()
 	nodesView := &master_shard.ShardNodesView{Nodes: nodes, Replica: req.Replica}
-	req2 := &master_shard.CreateShardRequest{Name: req.ShardName, ProfileName: req.ProfileName, NodesView: nodesView}
+	req2 := &master_shard.CreateShardRequest{
+		Name: req.ShardName,
+		ProfileName: req.ProfileName,
+		NodesView: nodesView,
+		Labels: req.Labels,
+	}
 	resp, err := it.cm.Client().MasterShard().CreateShard(ctx, req2)
 	if err != nil {
 		return &AddShardSpecResponse{}, DragonboatErrorToGrpcError(fmt.Errorf("Client().MasterShard().CreateShard(%s) err: %w", req.ShardName, err))

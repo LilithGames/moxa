@@ -45,7 +45,7 @@ func main() {
 		NodeHostDir:     "/data/nodehost",
 		LocalStorageDir: "/data/storage",
 		MemberSeed:      []string{"moxa-headless:7946"},
-		RttMillisecond:  100,
+		RttMillisecond:  1,
 		DeploymentId:    0,
 		EnableMetrics:   false,
 	}
@@ -151,7 +151,11 @@ func main() {
 	stopper.RunWorker(func() {
 		<-stopper.ShouldStop()
 		// drain
-		sm.Drain()
+		drainCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+		defer cancel()
+		if err := sm.Drain(drainCtx); err != nil {
+			log.Println("[WARN]", fmt.Errorf("ShardManager.Drain() err: %w", err))
+		}
 		time.Sleep(time.Second)
 
 		// terminate
@@ -161,4 +165,5 @@ func main() {
 		log.Println("[INFO]", fmt.Sprintf("all system fully stopped"))
 	})
 	stopper.Wait()
+	log.Println("[INFO]", fmt.Sprintf("system stopped as expected"))
 }
