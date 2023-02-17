@@ -60,7 +60,6 @@ func (it *Client) Wait(ctx context.Context, timeout time.Duration) error {
 	for {
 		it.conn.Connect()
 		state := it.conn.GetState()
-		log.Println("[INFO]", fmt.Sprintf("conn: %v", state))
 		if state == connectivity.Ready {
 			return nil
 		} else if state == connectivity.Shutdown {

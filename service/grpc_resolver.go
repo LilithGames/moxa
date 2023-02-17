@@ -131,8 +131,8 @@ func (it *serviceResolver) resolve() error {
 				Attributes: attributes.New("meta", makeResolveMeta(m)),
 			}
 			addrs = append(addrs, addr)
-			it.conn.UpdateState(resolver.State{Addresses: addrs})
 		}
+		it.conn.UpdateState(resolver.State{Addresses: addrs})
 		if errs == nil {
 			it.version = version
 		}
