@@ -45,6 +45,7 @@ func main() {
 		RttMillisecond:  100,
 		DeploymentId:    0,
 		EnableMetrics:   false,
+		StorageType:     cluster.StorageType_Memory,
 	}
 	sconf := &service.Config{
 		HttpPort: 8000,
@@ -149,4 +150,5 @@ func main() {
 		log.Println("[INFO]", fmt.Sprintf("all system fully stopped"))
 	})
 	stopper.Wait()
+	log.Println("[INFO]", fmt.Sprintf("system stopped as expected"))
 }

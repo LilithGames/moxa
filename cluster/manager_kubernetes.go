@@ -13,6 +13,7 @@ import (
 	eventbus "github.com/LilithGames/go-event-bus/v4"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
+	"github.com/lni/goutils/vfs"
 	"github.com/miekg/dns"
 
 	"github.com/LilithGames/moxa/utils"
@@ -87,6 +88,9 @@ func (it *KubernetesManager) startNodeHost() error {
 		RaftEventListener:   listener,
 		SystemEventListener: listener,
 		EnableMetrics:       it.config.EnableMetrics,
+	}
+	if it.config.StorageType == StorageType_Memory {
+		nhconf.Expert.FS = vfs.NewMem()
 	}
 	nh, err := dragonboat.NewNodeHost(nhconf)
 	if err != nil {
@@ -180,7 +184,7 @@ func (it *KubernetesManager) ImportSnapshots(ctx context.Context, snapshots map[
 func (it *KubernetesManager) Stop() error {
 	it.ms.Stop()
 	it.nh.Get().Stop()
-	time.Sleep(time.Second*3)
+	time.Sleep(time.Second * 3)
 	return nil
 }
 

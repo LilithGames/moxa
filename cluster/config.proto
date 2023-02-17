@@ -2,6 +2,11 @@ syntax = "proto3";
 package cluster;
 option go_package = "github.com/LilithGames/moxa/cluster";
 
+enum StorageType {
+  Disk = 0;
+  Memory = 1;
+}
+
 message Config {
   string node_host_dir = 1;
   string local_storage_dir = 2;
@@ -9,4 +14,5 @@ message Config {
   uint64 rtt_millisecond = 4;
   uint64 deployment_id = 5;
   bool enable_metrics = 6;
+  StorageType storage_type = 7;
 }

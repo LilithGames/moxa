@@ -9,6 +9,7 @@ import (
 	eventbus "github.com/LilithGames/go-event-bus/v4"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
+	"github.com/lni/goutils/vfs"
 
 	"github.com/LilithGames/moxa/utils"
 )
@@ -80,6 +81,9 @@ func (it *LocalManager) startNodeHost() error {
 		RaftEventListener:   listener,
 		SystemEventListener: listener,
 		EnableMetrics:       it.config.EnableMetrics,
+	}
+	if it.config.StorageType == StorageType_Memory {
+		nhconf.Expert.FS = vfs.NewMem()
 	}
 	nh, err := dragonboat.NewNodeHost(nhconf)
 	if err != nil {
