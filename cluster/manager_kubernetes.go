@@ -3,6 +3,8 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	eventbus "github.com/LilithGames/go-event-bus/v4"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/config"
+	"github.com/miekg/dns"
 
 	"github.com/LilithGames/moxa/utils"
 )
@@ -35,6 +38,9 @@ func NewKubernetesManager(ctx context.Context, config *Config) (Manager, error) 
 		nh:     utils.NewProvider[*dragonboat.NodeHost](nil),
 		bus:    eventbus.NewEventBus(),
 		ready:  NewSignal(false),
+	}
+	if err := it.ensureRaftAddressResolved(ctx); err != nil {
+		return nil, fmt.Errorf("ensureRaftAddressResolved err: %w", err)
 	}
 	if err := it.startNodeHost(); err != nil {
 		return nil, fmt.Errorf("startNodeHost err: %w", err)
@@ -90,6 +96,43 @@ func (it *KubernetesManager) startNodeHost() error {
 	return nil
 }
 
+func (it *KubernetesManager) ensureRaftAddressResolved(ctx context.Context) error {
+	domain := fmt.Sprintf("%s.%s.%s.svc.cluster.local.", os.Getenv("POD_NAME"), os.Getenv("POD_SERVICENAME"), os.Getenv("POD_NAMESPACE"))
+	podIP := os.Getenv("POD_IP")
+	ip := net.ParseIP(podIP)
+	if ip == nil {
+		return fmt.Errorf("invalid POD_IP: %s", podIP)
+	}
+	config, err := GetDefaultDnsClientConfig()
+	if err != nil {
+		return fmt.Errorf("GetDefaultDnsClientConfig err: %w", err)
+	}
+	client := &dns.Client{Timeout: time.Second}
+	timer := time.NewTimer(time.Second)
+	for i := 0; i < 10; {
+		ips, err := DnsResolveRecordA(client, config, domain)
+		if err != nil {
+			log.Println("[WARN]", fmt.Errorf("KubernetesManager DnsResolveRecordA err: %w", err))
+			i = 0
+		} else if len(ips) == 0 {
+			log.Println("[WARN]", fmt.Errorf("KubernetesManager DnsResolveRecordA empty result"))
+			i = 0
+		} else if !ips[0].Equal(ip) {
+			log.Println("[WARN]", fmt.Errorf("KubernetesManager resolve expect: %s, actual: %s", ip.String(), ips[0].String()))
+			i = 0
+		} else {
+			i++
+		}
+		utils.ResetTimer(timer, time.Second)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return fmt.Errorf("waiting raft address resolve ctx err: %w", ctx.Err())
+		}
+	}
+	return nil
+}
+
 func (it *KubernetesManager) NodeHost() *dragonboat.NodeHost {
 	return it.nh.Get()
 }
@@ -137,6 +180,7 @@ func (it *KubernetesManager) ImportSnapshots(ctx context.Context, snapshots map[
 func (it *KubernetesManager) Stop() error {
 	it.ms.Stop()
 	it.nh.Get().Stop()
+	time.Sleep(time.Second*3)
 	return nil
 }
 

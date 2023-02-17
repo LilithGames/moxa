@@ -359,15 +359,19 @@ func (it *NodeHostService) getNodeInfos(shardID uint64) []*NodeInfo {
 		return true
 	})
 	nodes := it.cm.GetNodes(shardID)
-	return lo.MapToSlice(nodes, func(nodeID uint64, addr string) *NodeInfo {
-		m := members[addr]
+	nis := make([]*NodeInfo, 0, len(nodes))
+	for nodeID, addr := range nodes {
+		m, ok := members[addr]
+		if !ok {
+			continue
+		}
 		isLeader := false
 		if m.State != nil {
 			if mshard, ok := m.State.Shards[shardID]; ok {
 				isLeader = mshard.IsLeader
 			}
 		}
-		return &NodeInfo{
+		ni := &NodeInfo{
 			NodeId:     nodeID,
 			NodeIndex:  m.Meta.NodeHostIndex,
 			NodeHostId: m.Meta.NodeHostId,
@@ -376,5 +380,7 @@ func (it *NodeHostService) getNodeInfos(shardID uint64) []*NodeInfo {
 			Following:  true,
 			Leading:    isLeader,
 		}
-	})
+		nis = append(nis, ni)
+	}
+	return nis
 }

@@ -1,43 +1,45 @@
 package cli
 
 import (
-	"log"
 	"fmt"
+	"log"
 	"syscall"
-	"net"
+	"time"
 
-	"github.com/urfave/cli/v2"
 	"github.com/lni/goutils/syncutil"
+	"github.com/miekg/dns"
 	"github.com/samber/lo"
+	"github.com/urfave/cli/v2"
 
+	"github.com/LilithGames/moxa/cluster"
 	"github.com/LilithGames/moxa/service"
 	"github.com/LilithGames/moxa/utils"
 )
 
 var cmdDebug = &cli.Command{
-	Name: "debug",
+	Name:    "debug",
 	Aliases: []string{"d"},
-	Usage: "debug",
-	Action: cli.ShowSubcommandHelp,
+	Usage:   "debug",
+	Action:  cli.ShowSubcommandHelp,
 	Subcommands: []*cli.Command{
 		{
-			Name: "subscribe",
+			Name:    "subscribe",
 			Aliases: []string{"sub"},
-			Action: cli.ShowSubcommandHelp,
-			Flags: []cli.Flag{},
+			Action:  cli.ShowSubcommandHelp,
+			Flags:   []cli.Flag{},
 			Subcommands: []*cli.Command{
 				{
-					Name: "members",
+					Name:    "members",
 					Aliases: []string{"m"},
-					Action: actionSubscribeMembers,
-					Flags: []cli.Flag{},
+					Action:  actionSubscribeMembers,
+					Flags:   []cli.Flag{},
 				},
 			},
 		},
 		{
-			Name: "resolve",
+			Name:    "resolve",
 			Aliases: []string{},
-			Action: actionResolve,
+			Action:  actionResolve,
 			Flags: []cli.Flag{
 				&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Value: "", Usage: "dns name", Required: true},
 			},
@@ -70,7 +72,7 @@ func actionSubscribeMembers(cCtx *cli.Context) error {
 			resp2, err := session.Recv()
 			if err != nil {
 				log.Println("[ERROR]", fmt.Errorf("session.Recv err: %w", err))
-				return 
+				return
 			}
 			state := resp2.State
 			fmt.Printf("member: %d %s %s %v\n", resp2.Version, resp2.Type.String(), state.Meta.NodeHostId, lo.Keys(state.Shards))
@@ -85,12 +87,16 @@ func actionSubscribeMembers(cCtx *cli.Context) error {
 }
 
 func actionResolve(cCtx *cli.Context) error {
-	helper := NewHelper(cCtx)
 	name := cCtx.String("name")
-	r := net.Resolver{PreferGo: true}
-	ips, err := r.LookupIP(helper.Ctx(), "ip4", name)
+
+	config, err := cluster.GetDefaultDnsClientConfig()
 	if err != nil {
-		return fmt.Errorf("LookupIP(%s) err: %w", name, err)
+		return fmt.Errorf("GetDefaultDnsClientConfig err: %w", err)
+	}
+	client := &dns.Client{Timeout: time.Second}
+	ips, err := cluster.DnsResolveRecordA(client, config, name)
+	if err != nil {
+		return fmt.Errorf("DnsResolveRecordA(%s) err: %w", name, err)
 	}
 	fmt.Printf("%+v\n", ips)
 	return nil
