@@ -1,15 +1,14 @@
 package service
 
 import (
-	"fmt"
 	"context"
-	"log"
+	"fmt"
 	"time"
 
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/connectivity"
-	"github.com/grpc-ecosystem/go-grpc-middleware/retry"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/LilithGames/moxa/cluster"
 )
@@ -30,7 +29,7 @@ func NewClient(cm cluster.Manager, target string) (IClient, error) {
 
 	retry_opts := []grpc_retry.CallOption{
 		grpc_retry.WithMax(3),
-		grpc_retry.WithBackoff(grpc_retry.BackoffExponentialWithJitter(100 * time.Millisecond, 0.01)),
+		grpc_retry.WithBackoff(grpc_retry.BackoffExponentialWithJitter(100*time.Millisecond, 0.01)),
 		grpc_retry.WithCodes(RouteNotFound),
 	}
 
@@ -74,5 +73,3 @@ func (it *Client) Wait(ctx context.Context, timeout time.Duration) error {
 func (it *Client) Close() error {
 	return it.conn.Close()
 }
-
-
