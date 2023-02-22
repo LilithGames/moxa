@@ -16,6 +16,7 @@ import (
 
 	"github.com/LilithGames/protoc-gen-dragonboat/runtime"
 	"github.com/lni/dragonboat/v3/config"
+	"google.golang.org/grpc"
 
 	"github.com/LilithGames/moxa"
 	"github.com/LilithGames/moxa/cluster"
@@ -88,7 +89,7 @@ func main() {
 		log.Fatalln("NewServiceClient err: ", err)
 	}
 	// don't wait service here for local
-	svc, err := service.NewClusterService(cm, sconf)
+	svc, err := service.NewClusterService(cm, sconf, service.ClusterServiceGrpcOpts(grpc.UnaryInterceptor(service.NewRequestTimeout(time.Second*60))))
 	if err != nil {
 		log.Fatalln("NewClusterService err: ", err)
 	}

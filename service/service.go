@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/hashicorp/go-multierror"
@@ -30,12 +29,13 @@ type ClusterService struct {
 	registers []GrpcGatewayRegisterFunc
 }
 
-func NewClusterService(cm cluster.Manager, config *Config) (*ClusterService, error) {
+func NewClusterService(cm cluster.Manager, config *Config, opts ...ClusterServiceOption) (*ClusterService, error) {
+	o := getClusterServiceOptions(opts...)
 	it := &ClusterService{
 		config:    config,
 		cm:        cm,
 		server:    &http.Server{Addr: fmt.Sprintf(":%d", config.HttpPort)},
-		gs:        grpc.NewServer(grpc.UnaryInterceptor(NewRequestTimeout(time.Second * 60))),
+		gs:        grpc.NewServer(o.grpcOpts...),
 		stopper:   syncutil.NewStopper(),
 		registers: []GrpcGatewayRegisterFunc{},
 	}
@@ -116,4 +116,37 @@ func (it *ClusterService) Run() error {
 func (it *ClusterService) Stop() error {
 	it.stopper.Stop()
 	return nil
+}
+
+type clusterServiceOptions struct {
+	grpcOpts []grpc.ServerOption
+}
+
+type ClusterServiceOption interface {
+	apply(*clusterServiceOptions)
+}
+
+type funcClusterServiceOption struct {
+	f func(*clusterServiceOptions)
+}
+
+func (it *funcClusterServiceOption) apply(o *clusterServiceOptions) {
+	it.f(o)
+}
+
+func newFuncClusterServiceOption(f func(*clusterServiceOptions)) ClusterServiceOption {
+	return &funcClusterServiceOption{f: f}
+}
+func getClusterServiceOptions(opts ...ClusterServiceOption) *clusterServiceOptions {
+	o := &clusterServiceOptions{}
+	for _, opt := range opts {
+		opt.apply(o)
+	}
+	return o
+}
+
+func ClusterServiceGrpcOpts(grpcOpts ...grpc.ServerOption) ClusterServiceOption {
+	return newFuncClusterServiceOption(func(o *clusterServiceOptions) {
+		o.grpcOpts = grpcOpts
+	})
 }
