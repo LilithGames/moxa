@@ -455,14 +455,20 @@ func (it *ShardManager) IsShardReady(ctx context.Context, shardID uint64) error 
 }
 
 func (it *ShardManager) WaitShardReady(ctx context.Context, shardID uint64, seconds int) error {
-	if err := utils.RetryWithDelay(ctx, seconds, time.Second, func() (bool, error) {
+	bo := &utils.Backoff{
+		InitialDelay: time.Millisecond,
+		Step: 2,
+		MaxDelay: lo.ToPtr(time.Second),
+		MaxDuration: lo.ToPtr(time.Duration(seconds)*time.Second),
+	}
+	if err := utils.RetryWithBackoff(ctx, bo, func() (bool, error) {
 		if err := it.IsShardReady(ctx, shardID); err != nil {
 			log.Println("[INFO]", fmt.Sprintf("Waiting shard %d ready", shardID))
 			return true, fmt.Errorf("%w: %v", ErrMigrationShardNotReady, err)
 		}
 		return false, nil
 	}); err != nil {
-		return fmt.Errorf("RetryWithDelay err: %w", err)
+		return fmt.Errorf("RetryWithBackoff err: %w", err)
 	}
 	return nil
 }

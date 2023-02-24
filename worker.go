@@ -108,6 +108,11 @@ func ShardSpecFixedSizeCreationWorker(cm cluster.Manager, profileName string, si
 			})
 			return lo.Max(ids)
 		}
+		bo := &utils.Backoff{
+			InitialDelay: time.Millisecond,
+			Step:         2,
+			MaxDuration:  lo.ToPtr(time.Second*10),
+		}
 		reconcile := func() bool {
 			resp, err := cm.Client().MasterShard().ListShards(ctx, &master_shard.ListShardsRequest{}, runtime.WithClientTimeout(time.Second*3))
 			if err != nil {
@@ -131,7 +136,7 @@ func ShardSpecFixedSizeCreationWorker(cm cluster.Manager, profileName string, si
 					log.Println("[WARN]", fmt.Errorf("ShardSpecFixedSizeCreationWorker MasterShard().CreateShard %s err: %w", name, err))
 					return false
 				}
-				if err := utils.RetryWithDelay(ctx, 10, time.Second, func() (bool, error) {
+				if err := utils.RetryWithBackoff(ctx, bo, func() (bool, error) {
 					if err := cm.Client().Void(resp.Shard.ShardId).VoidQuery(ctx, runtime.WithClientTimeout(time.Second)); err != nil {
 						return true, fmt.Errorf("VoidQuery err: %w", err)
 					}
@@ -147,7 +152,7 @@ func ShardSpecFixedSizeCreationWorker(cm cluster.Manager, profileName string, si
 					log.Println("[WARN]", fmt.Errorf("ShardSpecFixedSizeCreationWorker DeleteShard %s err: %w", last.ShardName, err))
 					return false
 				}
-				if err := utils.RetryWithDelay(ctx, 10, time.Second, func() (bool, error) {
+				if err := utils.RetryWithBackoff(ctx, bo, func() (bool, error) {
 					if err := cm.Client().Void(last.ShardId).VoidQuery(ctx, runtime.WithClientTimeout(time.Second)); err == nil {
 						return true, fmt.Errorf("shard %d still alive", last.ShardId)
 					}

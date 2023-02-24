@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	// "log"
 
 	eventbus "github.com/LilithGames/go-event-bus/v4"
 	"github.com/lni/dragonboat/v3"
@@ -49,24 +50,26 @@ func NewLocalManager(ctx context.Context, config *Config) (Manager, error) {
 		StartupTimestamp: time.Now().Unix(),
 		Type:             MemberType_Dragonboat,
 	}
-	ms, err := NewMembers(meta, it.bus, config.MemberSeed)
+	it.cc = NewClient(it)
+	ms, err := NewMembers(meta, it.bus, config.MemberSeed, MembersLocal(true))
 	if err != nil {
+		// log.Println("[ERROR]", fmt.Errorf("NewMembers err: %w", err))
 		return nil, fmt.Errorf("NewMembers err: %w", err)
 	}
 	it.ms = ms
-	it.cc = NewClient(it)
 
 	if err := it.ms.UpdateNodeHostInfo(it.nh.Get().GetNodeHostInfo(dragonboat.NodeHostInfoOption{false})); err != nil {
+		// log.Println("[WARN]", fmt.Errorf("UpdateNodeHostInfo err: %w", err))
 		return nil, fmt.Errorf("UpdateNodeHostInfo err : %w", err)
 	}
-	if err := utils.RetryWithDelay(ctx, 3, time.Second*3, func() (bool, error) {
-		if err := it.ms.SyncState(); err != nil {
-			return true, fmt.Errorf("SyncState err: %w", err)
-		}
-		return false, nil
-	}); err != nil {
-		return nil, fmt.Errorf("RetryWithDelay err: %w", err)
-	}
+	// if err := utils.RetryWithDelay(ctx, 3, time.Second*3, func() (bool, error) {
+		// if err := it.ms.SyncState(); err != nil {
+			// return true, fmt.Errorf("SyncState err: %w", err)
+		// }
+		// return false, nil
+	// }); err != nil {
+		// return nil, fmt.Errorf("RetryWithDelay err: %w", err)
+	// }
 	return it, nil
 }
 

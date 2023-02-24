@@ -42,7 +42,8 @@ type Members struct {
 	stopper *syncutil.Stopper
 }
 
-func NewMembers(meta MemberMeta, bus *eventbus.EventBus, seed []string) (IMembers, error) {
+func NewMembers(meta MemberMeta, bus *eventbus.EventBus, seed []string, opts ...MembersOption) (IMembers, error) {
+	o := getMembersOptions(opts...)
 	it := &Members{
 		seed: seed,
 		meta: &meta,
@@ -50,7 +51,13 @@ func NewMembers(meta MemberMeta, bus *eventbus.EventBus, seed []string) (IMember
 		stopper: syncutil.NewStopper(),
 		MemberStateManager: NewMemberStateManager(meta.NodeHostId, bus),
 	}
-	conf := memberlist.DefaultLANConfig()
+	var conf *memberlist.Config
+	if o.local {
+		conf = memberlist.DefaultLocalConfig()
+		conf.BindAddr = "127.0.0.1"
+	} else {
+		conf = memberlist.DefaultLANConfig()
+	}
 	conf.Name = meta.NodeHostId
 	conf.Delegate = it
 	conf.Logger = log.Default()
@@ -196,4 +203,37 @@ func (it *Members) NotifyLeave(node *memberlist.Node) {
 }
 func (it *Members) NotifyUpdate(node *memberlist.Node) {
 
+}
+
+type membersOptions struct {
+	local bool 
+}
+
+type MembersOption interface {
+	apply(*membersOptions)
+}
+
+type funcMembersOption struct {
+	f func(*membersOptions)
+}
+
+func (it *funcMembersOption) apply(o *membersOptions) {
+	it.f(o)
+}
+
+func newFuncMembersOption(f func(*membersOptions)) MembersOption {
+	return &funcMembersOption{f: f}
+}
+func getMembersOptions(opts ...MembersOption) *membersOptions {
+	o := &membersOptions{}
+	for _, opt := range opts {
+		opt.apply(o)
+	}
+	return o
+}
+
+func MembersLocal(local bool) MembersOption {
+	return newFuncMembersOption(func(o *membersOptions) {
+		o.local = local
+	})
 }

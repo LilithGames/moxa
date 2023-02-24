@@ -24,24 +24,25 @@ func ShardSpecUpdatingWorker(cm Manager) Worker {
 			defer tick.Stop()
 			var version uint64 = 0
 			for {
+				resp, err := cm.Client().MasterShard().GetStateVersion(ctx, &master_shard.GetStateVersionRequest{}, runtime.WithClientStale(true))
+				if err != nil {
+					if !errors.Is(err, dragonboat.ErrClusterNotFound) && !errors.Is(err, dragonboat.ErrClosed) {
+						log.Println("[WARN]", fmt.Errorf("OnSubShardsUpdating MasterShard().GetStateVersion err: %w", err))
+					}
+					continue
+				}
+				if version != resp.ShardsStateVersion {
+					if version > resp.ShardsStateVersion {
+						log.Println("[WARN]", fmt.Errorf("OnSubShardsUpdating ShardsStateVersion seems rollbacked"))
+					} else {
+						log.Println("[INFO]", fmt.Errorf("OnSubShardsUpdating shards version %d -> %d", version, resp.ShardsStateVersion))
+					}
+					cm.EventBus().Publish(EventTopic_ShardSpecUpdating.String(), &ShardSpecUpdatingEvent{StateVersion: resp.ShardsStateVersion})
+					version = resp.ShardsStateVersion
+				}
 				select {
+				case <-cm.StartupReady().Setted():
 				case <-tick.C:
-					resp, err := cm.Client().MasterShard().GetStateVersion(ctx, &master_shard.GetStateVersionRequest{}, runtime.WithClientStale(true))
-					if err != nil {
-						if !errors.Is(err, dragonboat.ErrClusterNotFound) && !errors.Is(err, dragonboat.ErrClosed) {
-							log.Println("[WARN]", fmt.Errorf("OnSubShardsUpdating MasterShard().GetStateVersion err: %w", err))
-						}
-						continue
-					}
-					if version != resp.ShardsStateVersion {
-						if version > resp.ShardsStateVersion {
-							log.Println("[WARN]", fmt.Errorf("OnSubShardsUpdating ShardsStateVersion seems rollbacked"))
-						} else {
-							log.Println("[INFO]", fmt.Errorf("OnSubShardsUpdating shards version %d -> %d", version, resp.ShardsStateVersion))
-						}
-						cm.EventBus().Publish(EventTopic_ShardSpecUpdating.String(), &ShardSpecUpdatingEvent{StateVersion: resp.ShardsStateVersion})
-						version = resp.ShardsStateVersion
-					}
 				case <-stopper.ShouldStop():
 					return
 				}

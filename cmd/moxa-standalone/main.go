@@ -28,6 +28,19 @@ import (
 )
 
 func main() {
+	start := time.Now()
+	go func() {
+		start := time.Now()
+		c := http.Client{Timeout: time.Millisecond*100}
+		for {
+			resp, err := c.Get("http://localhost:8000/sub/auto-1/get")
+			if err == nil && resp.StatusCode == 200 {
+				fmt.Printf("startup ready duration: %s\n", time.Since(start))
+				return
+			}
+			time.Sleep(time.Millisecond*10)
+		}
+	}()
 	stopper := syncutil.NewStopper()
 	ctx := utils.BindContext(stopper, context.Background())
 	utils.SignalHandler(stopper, syscall.SIGINT, syscall.SIGTERM)
@@ -42,8 +55,8 @@ func main() {
 	conf := &cluster.Config{
 		NodeHostDir:     "tmp/nodehost",
 		LocalStorageDir: "tmp/storage",
-		MemberSeed:      []string{"localhost:7946"},
-		RttMillisecond:  100,
+		MemberSeed:      []string{},
+		RttMillisecond:  1,
 		DeploymentId:    0,
 		EnableMetrics:   false,
 		StorageType:     cluster.StorageType_Memory,
@@ -56,7 +69,7 @@ func main() {
 		Name:     moxa.MasterProfileName,
 		CreateFn: runtime.NewMigrationStateMachineWrapper(master_shard.NewStateMachine),
 		Config: config.Config{
-			CheckQuorum:         true,
+			CheckQuorum:         false,
 			ElectionRTT:         10,
 			HeartbeatRTT:        1,
 			SnapshotEntries:     100,
@@ -136,6 +149,7 @@ func main() {
 			return
 		}
 		cm.StartupReady().Set()
+		fmt.Printf("ts1 %s\n", time.Since(start))
 	})
 
 	stopper.RunWorker(func() {
