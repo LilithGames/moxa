@@ -20,7 +20,7 @@ func ShardSpecUpdatingWorker(cm Manager) Worker {
 	return func(stopper *syncutil.Stopper) error {
 		stopper.RunWorker(func() {
 			ctx := context.TODO()
-			tick := time.NewTicker(time.Second)
+			tick := time.NewTicker(time.Millisecond*100)
 			defer tick.Stop()
 			var version uint64 = 0
 			for {
@@ -41,7 +41,6 @@ func ShardSpecUpdatingWorker(cm Manager) Worker {
 					version = resp.ShardsStateVersion
 				}
 				select {
-				case <-cm.StartupReady().Setted():
 				case <-tick.C:
 				case <-stopper.ShouldStop():
 					return
